@@ -1,0 +1,7 @@
+# Normalize text files while preserving the platform-native working-tree ending.
+* text=auto
+
+# Unreal packages are binary and must be stored through Git LFS.
+# `lockable` is intentionally omitted until the remote and team locking workflow is verified.
+*.uasset filter=lfs diff=lfs merge=lfs -text
+*.umap   filter=lfs diff=lfs merge=lfs -text

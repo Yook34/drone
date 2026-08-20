@@ -1,0 +1,41 @@
+# Unreal Engine generated data
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+
+# Visual Studio and other IDE-generated data
+.vs/
+*.sln
+*.slnx
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build-system generated files
+.idea/
+.gradle/
+Makefile
+CMakeLists.txt
+CMakeSettings.json
+cmake-build-*/
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs, crash dumps, and temporary files
+*.log
+*.tmp
+*.temp
+*.bak
+*.pdb
+
+# Keep these project inputs under Git:
+#   *.uproject, Config/, Content/, Source/, Plugins/, and Build/
