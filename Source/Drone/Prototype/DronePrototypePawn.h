@@ -6,6 +6,7 @@
 
 class AController;
 class UCameraComponent;
+class UDroneTelemetryComponent;
 class UEnhancedInputLocalPlayerSubsystem;
 class UFloatingPawnMovement;
 class UInputAction;
@@ -39,6 +40,7 @@ public:
 	USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
 	UCameraComponent* GetFollowCamera() const { return FollowCamera; }
 	UFloatingPawnMovement* GetPrototypeMovementComponent() const { return PrototypeMovementComponent; }
+	UDroneTelemetryComponent* GetTelemetryComponent() const { return TelemetryComponent; }
 
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -57,6 +59,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Prototype|Components", meta=(AllowPrivateAccess="true"))
 	TObjectPtr<UFloatingPawnMovement> PrototypeMovementComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Prototype|Components", meta=(AllowPrivateAccess="true"))
+	TObjectPtr<UDroneTelemetryComponent> TelemetryComponent;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Prototype|Input", meta=(AllowPrivateAccess="true"))
 	TObjectPtr<UInputMappingContext> PrototypeMappingContext;

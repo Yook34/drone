@@ -9,6 +9,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/FloatingPawnMovement.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Telemetry/DroneTelemetryComponent.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FDronePrototypeDefaultsTest,
@@ -30,6 +31,7 @@ bool FDronePrototypeDefaultsTest::RunTest(const FString& Parameters)
 		TestNotNull(TEXT("Camera boom exists"), PawnDefaults->GetCameraBoom());
 		TestNotNull(TEXT("Follow camera exists"), PawnDefaults->GetFollowCamera());
 		TestNotNull(TEXT("Floating Pawn Movement exists"), PawnDefaults->GetPrototypeMovementComponent());
+		TestNotNull(TEXT("Telemetry component exists"), PawnDefaults->GetTelemetryComponent());
 		TestTrue(TEXT("Collision component is the root"), PawnDefaults->GetRootComponent() == PawnDefaults->GetCollisionComponent());
 		TestTrue(TEXT("Pawn exposes the prototype movement component"), PawnDefaults->GetMovementComponent() == PawnDefaults->GetPrototypeMovementComponent());
 
@@ -71,6 +73,17 @@ bool FDronePrototypeDefaultsTest::RunTest(const FString& Parameters)
 				TEXT("Movement component updates the collision root"),
 				PawnDefaults->GetPrototypeMovementComponent()->UpdatedComponent == PawnDefaults->GetCollisionComponent());
 			TestTrue(TEXT("Prototype max speed is positive"), PawnDefaults->GetPrototypeMovementComponent()->MaxSpeed > 0.0f);
+		}
+
+		if (PawnDefaults->GetTelemetryComponent())
+		{
+			TestFalse(
+				TEXT("Telemetry component does not tick every frame"),
+				PawnDefaults->GetTelemetryComponent()->PrimaryComponentTick.bCanEverTick);
+			TestEqual(
+				TEXT("Telemetry component updates at 10 Hz"),
+				PawnDefaults->GetTelemetryComponent()->GetUpdateIntervalSeconds(),
+				0.1f);
 		}
 	}
 

@@ -13,6 +13,7 @@
 #include "InputAction.h"
 #include "InputActionValue.h"
 #include "InputMappingContext.h"
+#include "Telemetry/DroneTelemetryComponent.h"
 
 ADronePrototypePawn::ADronePrototypePawn()
 {
@@ -49,6 +50,8 @@ ADronePrototypePawn::ADronePrototypePawn()
 	PrototypeMovementComponent->Acceleration = 2400.0f;
 	PrototypeMovementComponent->Deceleration = 3000.0f;
 	PrototypeMovementComponent->TurningBoost = 8.0f;
+
+	TelemetryComponent = CreateDefaultSubobject<UDroneTelemetryComponent>(TEXT("TelemetryComponent"));
 }
 
 void ADronePrototypePawn::PawnClientRestart()
