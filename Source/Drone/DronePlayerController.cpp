@@ -1,5 +1,4 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
-//test
 
 #include "DronePlayerController.h"
 #include "EnhancedInputSubsystems.h"

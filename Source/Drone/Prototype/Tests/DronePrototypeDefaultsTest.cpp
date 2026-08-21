@@ -53,7 +53,8 @@ bool FDronePrototypeDefaultsTest::RunTest(const FString& Parameters)
 			TestTrue(
 				TEXT("Camera boom is attached to the collision root"),
 				PawnDefaults->GetCameraBoom()->GetAttachParent() == PawnDefaults->GetCollisionComponent());
-			TestTrue(TEXT("Camera boom follows controller rotation"), PawnDefaults->GetCameraBoom()->bUsePawnControlRotation);
+			TestFalse(TEXT("Camera boom ignores controller rotation"), PawnDefaults->GetCameraBoom()->bUsePawnControlRotation);
+			TestTrue(TEXT("Camera boom inherits Drone yaw"), PawnDefaults->GetCameraBoom()->bInheritYaw);
 		}
 
 		if (PawnDefaults->GetFollowCamera())

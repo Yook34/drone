@@ -37,7 +37,7 @@ ADronePrototypePawn::ADronePrototypePawn()
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(CollisionComponent);
 	CameraBoom->TargetArmLength = 500.0f;
-	CameraBoom->bUsePawnControlRotation = true;
+	CameraBoom->bUsePawnControlRotation = false;
 
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
@@ -112,7 +112,16 @@ void ADronePrototypePawn::SetupPlayerInputComponent(UInputComponent* PlayerInput
 		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &ADronePrototypePawn::Look);
 	}
 
-	if (!MoveAction || !AltitudeAction || !YawAction || !LookAction)
+	if (CameraPitchRateAction)
+	{
+		EnhancedInputComponent->BindAction(
+			CameraPitchRateAction,
+			ETriggerEvent::Triggered,
+			this,
+			&ADronePrototypePawn::ChangeCameraPitch);
+	}
+
+	if (!MoveAction || !AltitudeAction || !YawAction || !LookAction || !CameraPitchRateAction)
 	{
 		UE_LOG(LogDrone, Display, TEXT("Prototype pawn '%s' does not have all prototype Input Actions assigned yet."), *GetNameSafe(this));
 	}
@@ -212,6 +221,36 @@ void ADronePrototypePawn::ChangeYaw(const FInputActionValue& Value)
 void ADronePrototypePawn::Look(const FInputActionValue& Value)
 {
 	const FVector2D LookValue = Value.Get<FVector2D>();
-	AddControllerYawInput(LookValue.X);
-	AddControllerPitchInput(LookValue.Y);
+	AddActorLocalRotation(FRotator(0.0f, LookValue.X * PrototypeMouseYawDegreesPerInput, 0.0f));
+	AdjustCameraPitch(LookValue.Y * PrototypeMousePitchDegreesPerInput);
+}
+
+void ADronePrototypePawn::ChangeCameraPitch(const FInputActionValue& Value)
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const float PitchDelta =
+		Value.Get<float>() * PrototypeGamepadPitchRateDegreesPerSecond * World->GetDeltaSeconds();
+	AdjustCameraPitch(PitchDelta);
+}
+
+void ADronePrototypePawn::AdjustCameraPitch(const float PitchDeltaDegrees)
+{
+	if (!CameraBoom || FMath::IsNearlyZero(PitchDeltaDegrees))
+	{
+		return;
+	}
+
+	FRotator BoomRotation = CameraBoom->GetRelativeRotation();
+	BoomRotation.Pitch = FMath::Clamp(
+		BoomRotation.Pitch + PitchDeltaDegrees,
+		PrototypeMinimumCameraPitchDegrees,
+		PrototypeMaximumCameraPitchDegrees);
+	BoomRotation.Yaw = 0.0f;
+	BoomRotation.Roll = 0.0f;
+	CameraBoom->SetRelativeRotation(BoomRotation);
 }

@@ -74,10 +74,28 @@ protected:
 	TObjectPtr<UInputAction> LookAction;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Prototype|Input", meta=(AllowPrivateAccess="true"))
+	TObjectPtr<UInputAction> CameraPitchRateAction;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Prototype|Input", meta=(AllowPrivateAccess="true"))
 	int32 PrototypeMappingPriority = 1;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Prototype|Movement", meta=(ClampMin="0.0", AllowPrivateAccess="true"))
 	float PrototypeYawRateDegreesPerSecond = 90.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Prototype|Camera", meta=(ClampMin="0.0", AllowPrivateAccess="true"))
+	float PrototypeMouseYawDegreesPerInput = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Prototype|Camera", meta=(ClampMin="0.0", AllowPrivateAccess="true"))
+	float PrototypeMousePitchDegreesPerInput = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Prototype|Camera", meta=(ClampMin="0.0", AllowPrivateAccess="true"))
+	float PrototypeGamepadPitchRateDegreesPerSecond = 90.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Prototype|Camera", meta=(ClampMin="-89.0", ClampMax="89.0", AllowPrivateAccess="true"))
+	float PrototypeMinimumCameraPitchDegrees = -70.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Prototype|Camera", meta=(ClampMin="-89.0", ClampMax="89.0", AllowPrivateAccess="true"))
+	float PrototypeMaximumCameraPitchDegrees = 20.0f;
 
 private:
 	TWeakObjectPtr<UEnhancedInputLocalPlayerSubsystem> AppliedInputSubsystem;
@@ -91,4 +109,6 @@ private:
 	void ChangeAltitude(const FInputActionValue& Value);
 	void ChangeYaw(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
+	void ChangeCameraPitch(const FInputActionValue& Value);
+	void AdjustCameraPitch(float PitchDeltaDegrees);
 };
