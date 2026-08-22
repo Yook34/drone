@@ -3,6 +3,7 @@
 #include "Misc/AutomationTest.h"
 #include "Prototype/DronePrototypeGameMode.h"
 #include "Prototype/DronePrototypePawn.h"
+#include "Prototype/DronePrototypePlayerController.h"
 
 #include "Camera/CameraComponent.h"
 #include "Components/SphereComponent.h"
@@ -10,6 +11,7 @@
 #include "GameFramework/FloatingPawnMovement.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Telemetry/DroneTelemetryComponent.h"
+#include "UI/DroneFlightHUDWidget.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FDronePrototypeDefaultsTest,
@@ -20,6 +22,8 @@ bool FDronePrototypeDefaultsTest::RunTest(const FString& Parameters)
 {
 	TestFalse(TEXT("Prototype Pawn class is concrete"), ADronePrototypePawn::StaticClass()->HasAnyClassFlags(CLASS_Abstract));
 	TestFalse(TEXT("Prototype GameMode class is concrete"), ADronePrototypeGameMode::StaticClass()->HasAnyClassFlags(CLASS_Abstract));
+	TestFalse(TEXT("Prototype PlayerController class is concrete"), ADronePrototypePlayerController::StaticClass()->HasAnyClassFlags(CLASS_Abstract));
+	TestFalse(TEXT("Flight HUD Widget class is concrete"), UDroneFlightHUDWidget::StaticClass()->HasAnyClassFlags(CLASS_Abstract));
 
 	const ADronePrototypePawn* PawnDefaults = GetDefault<ADronePrototypePawn>();
 	TestNotNull(TEXT("Prototype Pawn CDO exists"), PawnDefaults);
@@ -94,6 +98,19 @@ bool FDronePrototypeDefaultsTest::RunTest(const FString& Parameters)
 		TestTrue(
 			TEXT("Prototype GameMode spawns the Prototype Pawn"),
 			GameModeDefaults->DefaultPawnClass == ADronePrototypePawn::StaticClass());
+		TestTrue(
+			TEXT("Prototype GameMode uses the Prototype PlayerController"),
+			GameModeDefaults->PlayerControllerClass == ADronePrototypePlayerController::StaticClass());
+	}
+
+	const ADronePrototypePlayerController* PlayerControllerDefaults =
+		GetDefault<ADronePrototypePlayerController>();
+	TestNotNull(TEXT("Prototype PlayerController CDO exists"), PlayerControllerDefaults);
+	if (PlayerControllerDefaults)
+	{
+		TestTrue(
+			TEXT("Prototype PlayerController uses the native Flight HUD fallback"),
+			PlayerControllerDefaults->GetFlightHUDWidgetClass() == UDroneFlightHUDWidget::StaticClass());
 	}
 
 	return true;

@@ -1,6 +1,7 @@
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Prototype/DronePrototypePawn.h"
+#include "Prototype/DronePrototypePlayerController.h"
 
 #include "Editor.h"
 #include "Editor/EditorEngine.h"
@@ -24,8 +25,11 @@
 #include "Misc/AutomationTest.h"
 #include "PlayInEditorDataTypes.h"
 #include "Settings/LevelEditorPlaySettings.h"
+#include "Telemetry/DroneTelemetryComponent.h"
 #include "Tests/AutomationCommon.h"
 #include "Tests/AutomationEditorCommon.h"
+#include "UI/DroneFlightHUDWidget.h"
+#include "UObject/UObjectIterator.h"
 #include "UObject/UObjectGlobals.h"
 
 namespace DronePrototypePIEInputLifecycle
@@ -250,10 +254,16 @@ struct FPIECycleLifecycleState
 {
 	void Capture(
 		UEnhancedInputLocalPlayerSubsystem* InSubsystem,
-		UInputMappingContext* InMappingContext)
+		UInputMappingContext* InMappingContext,
+		ADronePrototypePlayerController* InController,
+		UDroneFlightHUDWidget* InFlightHUD,
+		UDroneTelemetryComponent* InTelemetry)
 	{
 		Subsystem = InSubsystem;
 		MappingContext = InMappingContext;
+		Controller = InController;
+		FlightHUD = InFlightHUD;
+		Telemetry = InTelemetry;
 	}
 
 	bool IsMappingContextStillApplied() const
@@ -264,9 +274,45 @@ struct FPIECycleLifecycleState
 			&& CurrentSubsystem->HasMappingContext(CurrentMappingContext);
 	}
 
+	bool IsHUDLifecycleStillBound(FString& OutReason) const
+	{
+		UDroneFlightHUDWidget* CurrentHUD = FlightHUD.Get();
+		UDroneTelemetryComponent* CurrentTelemetry = Telemetry.Get();
+		ADronePrototypePlayerController* CurrentController = Controller.Get();
+
+		if (CurrentHUD && (CurrentHUD->IsInViewport() || CurrentHUD->HasTelemetrySource()))
+		{
+			OutReason = TEXT("Flight HUD retained its viewport or telemetry source after PIE teardown");
+			return true;
+		}
+
+		if (CurrentHUD && CurrentTelemetry
+			&& CurrentTelemetry->OnTelemetryUpdated.Contains(
+				CurrentHUD,
+				FName(TEXT("HandleTelemetryUpdated"))))
+		{
+			OutReason = TEXT("Flight HUD telemetry delegate remained bound after PIE teardown");
+			return true;
+		}
+
+		if (CurrentController
+			&& CurrentController->OnPossessedPawnChanged.Contains(
+				CurrentController,
+				FName(TEXT("HandlePossessedPawnChanged"))))
+		{
+			OutReason = TEXT("Prototype PlayerController possession delegate remained bound after PIE teardown");
+			return true;
+		}
+
+		return false;
+	}
+
 private:
 	TWeakObjectPtr<UEnhancedInputLocalPlayerSubsystem> Subsystem;
 	TWeakObjectPtr<UInputMappingContext> MappingContext;
+	TWeakObjectPtr<ADronePrototypePlayerController> Controller;
+	TWeakObjectPtr<UDroneFlightHUDWidget> FlightHUD;
+	TWeakObjectPtr<UDroneTelemetryComponent> Telemetry;
 };
 
 class FValidatePIEInputCommand final : public IAutomationLatentCommand
@@ -316,6 +362,12 @@ public:
 				return false;
 			}
 
+			if (!bHUDPossessionCycleCompleted)
+			{
+				Phase = EPhase::HUDUnpossess;
+				return false;
+			}
+
 			BuildProbes();
 			BuildCombinationProbes();
 			Phase = EPhase::Reset;
@@ -323,11 +375,50 @@ public:
 		}
 
 		ADronePrototypePawn* CurrentPawn = Pawn.Get();
-		APlayerController* CurrentController = Controller.Get();
+		ADronePrototypePlayerController* CurrentController = Controller.Get();
 		UEnhancedPlayerInput* CurrentInput = PlayerInput.Get();
-		if (!CurrentPawn || !CurrentController || !CurrentInput)
+		UDroneFlightHUDWidget* CurrentFlightHUD = FlightHUD.Get();
+		UDroneTelemetryComponent* CurrentTelemetry = Telemetry.Get();
+		if (!CurrentPawn || !CurrentController || !CurrentInput || !CurrentFlightHUD || !CurrentTelemetry)
 		{
-			return Fail(TEXT("PIE objects became invalid during input probes"));
+			return Fail(TEXT("PIE input or Flight HUD objects became invalid during lifecycle probes"));
+		}
+
+		if (Phase == EPhase::HUDUnpossess)
+		{
+			CurrentController->UnPossess();
+			if (CurrentController->GetPawn() != nullptr
+				|| CurrentFlightHUD != CurrentController->GetFlightHUDWidget()
+				|| CurrentFlightHUD->HasTelemetrySource()
+				|| CurrentFlightHUD->GetVisibility() != ESlateVisibility::Collapsed
+				|| CurrentTelemetry->OnTelemetryUpdated.Contains(
+					CurrentFlightHUD,
+					FName(TEXT("HandleTelemetryUpdated"))))
+			{
+				return Fail(TEXT("UnPossess did not reuse and hide the Flight HUD or release telemetry"));
+			}
+
+			Phase = EPhase::HUDRepossess;
+			return false;
+		}
+
+		if (Phase == EPhase::HUDRepossess)
+		{
+			CurrentController->Possess(CurrentPawn);
+			if (CurrentController->GetPawn() != CurrentPawn
+				|| CurrentFlightHUD != CurrentController->GetFlightHUDWidget()
+				|| CurrentFlightHUD->GetTelemetrySource() != CurrentTelemetry
+				|| CurrentFlightHUD->GetVisibility() != ESlateVisibility::HitTestInvisible
+				|| !CurrentTelemetry->OnTelemetryUpdated.Contains(
+					CurrentFlightHUD,
+					FName(TEXT("HandleTelemetryUpdated"))))
+			{
+				return Fail(TEXT("Re-Possess did not reuse and reconnect the Flight HUD"));
+			}
+
+			bHUDPossessionCycleCompleted = true;
+			Phase = EPhase::Acquire;
+			return false;
 		}
 
 		if (ProbeIndex >= Probes.Num() && CombinationIndex >= CombinationProbes.Num())
@@ -340,7 +431,7 @@ public:
 			}
 
 			Test->AddInfo(FString::Printf(
-				TEXT("[fresh PIE %d/3] keyboard, mouse, gamepad, combination, opposing-input, and strength probes passed"),
+				TEXT("[fresh PIE %d/3] HUD viewport/possession lifecycle, keyboard, mouse, gamepad, combination, opposing-input, and strength probes passed"),
 				Cycle));
 			return true;
 		}
@@ -497,6 +588,8 @@ private:
 	enum class EPhase : uint8
 	{
 		Acquire,
+		HUDUnpossess,
+		HUDRepossess,
 		Reset,
 		Settle,
 		Observe,
@@ -540,16 +633,86 @@ private:
 			return EAcquireResult::Fatal;
 		}
 
-		APlayerController* FoundController = WorldObject->GetFirstPlayerController();
+		ADronePrototypePlayerController* FoundController =
+			Cast<ADronePrototypePlayerController>(WorldObject->GetFirstPlayerController());
 		if (!FoundController || !FoundController->IsLocalController())
 		{
-			OutReason = TEXT("local PlayerController is unavailable");
+			OutReason = TEXT("local Prototype PlayerController is unavailable");
 			return EAcquireResult::Wait;
 		}
 
 		if (FoundController->GetPawn() != FoundPawn || FoundPawn->GetController() != FoundController)
 		{
 			OutReason = TEXT("Prototype Pawn is not possessed by the local PlayerController");
+			return EAcquireResult::Fatal;
+		}
+
+		UDroneFlightHUDWidget* FoundFlightHUD = FoundController->GetFlightHUDWidget();
+		if (!FoundFlightHUD || !FoundFlightHUD->IsInViewport())
+		{
+			OutReason = TEXT("Flight HUD Widget is not on the local Player screen yet");
+			return EAcquireResult::Wait;
+		}
+
+		if (FoundFlightHUD->GetTelemetrySource() != FoundPawn->GetTelemetryComponent()
+			|| FoundFlightHUD->GetOwningPlayer() != FoundController
+			|| FoundFlightHUD->GetVisibility() != ESlateVisibility::HitTestInvisible)
+		{
+			OutReason = TEXT("Flight HUD is not visibly connected to the possessed Drone telemetry");
+			return EAcquireResult::Fatal;
+		}
+
+		UDroneTelemetryComponent* FoundTelemetry = FoundPawn->GetTelemetryComponent();
+		if (!FoundTelemetry
+			|| !FoundTelemetry->OnTelemetryUpdated.Contains(
+				FoundFlightHUD,
+				FName(TEXT("HandleTelemetryUpdated")))
+			|| !FoundController->OnPossessedPawnChanged.Contains(
+				FoundController,
+				FName(TEXT("HandlePossessedPawnChanged"))))
+		{
+			OutReason = TEXT("Flight HUD or possession lifecycle delegate is not bound");
+			return EAcquireResult::Fatal;
+		}
+
+		int32 WorldFlightHUDCount = 0;
+		int32 VisibleFlightHUDCount = 0;
+		for (TObjectIterator<UDroneFlightHUDWidget> It; It; ++It)
+		{
+			UDroneFlightHUDWidget* Candidate = *It;
+			if (!Candidate || Candidate->IsTemplate())
+			{
+				continue;
+			}
+
+			if (Candidate->GetWorld() == WorldObject)
+			{
+				++WorldFlightHUDCount;
+			}
+			if (Candidate->IsInViewport())
+			{
+				++VisibleFlightHUDCount;
+			}
+		}
+
+		if (WorldFlightHUDCount != 1 || VisibleFlightHUDCount != 1)
+		{
+			OutReason = FString::Printf(
+				TEXT("expected one PIE Flight HUD and one visible Flight HUD, found %d and %d"),
+				WorldFlightHUDCount,
+				VisibleFlightHUDCount);
+			return EAcquireResult::Fatal;
+		}
+
+		FoundTelemetry->RefreshTelemetry();
+		const FDroneTelemetrySnapshot LatestSnapshot = FoundTelemetry->GetLatestSnapshot();
+		const FDroneTelemetrySnapshot DisplayedSnapshot = FoundFlightHUD->GetDisplayedSnapshot();
+		if (!FMath::IsNearlyEqual(DisplayedSnapshot.SpeedKilometersPerHour, LatestSnapshot.SpeedKilometersPerHour)
+			|| !FMath::IsNearlyEqual(DisplayedSnapshot.AltitudeMeters, LatestSnapshot.AltitudeMeters)
+			|| !FMath::IsNearlyEqual(DisplayedSnapshot.VerticalSpeedMetersPerSecond, LatestSnapshot.VerticalSpeedMetersPerSecond)
+			|| !FMath::IsNearlyEqual(DisplayedSnapshot.HeadingDegrees, LatestSnapshot.HeadingDegrees))
+		{
+			OutReason = TEXT("Flight HUD did not receive the latest telemetry event Snapshot");
 			return EAcquireResult::Fatal;
 		}
 
@@ -693,8 +856,10 @@ private:
 		World = WorldObject;
 		Pawn = FoundPawn;
 		Controller = FoundController;
+		FlightHUD = FoundFlightHUD;
+		Telemetry = FoundTelemetry;
 		PlayerInput = FoundInput;
-		LifecycleState->Capture(Subsystem, IMC);
+		LifecycleState->Capture(Subsystem, IMC, FoundController, FoundFlightHUD, FoundTelemetry);
 		InitialPawnTransform = FoundPawn->GetActorTransform();
 		InitialControlRotation = FoundController->GetControlRotation();
 		InitialCameraBoomRotation = FoundPawn->GetCameraBoom()->GetRelativeRotation();
@@ -1060,9 +1225,12 @@ private:
 	TArray<FProbe> Probes;
 	TArray<FCombinationProbe> CombinationProbes;
 	TMap<FName, float> CycleStrengths;
+	bool bHUDPossessionCycleCompleted = false;
 	TWeakObjectPtr<UWorld> World;
 	TWeakObjectPtr<ADronePrototypePawn> Pawn;
-	TWeakObjectPtr<APlayerController> Controller;
+	TWeakObjectPtr<ADronePrototypePlayerController> Controller;
+	TWeakObjectPtr<UDroneFlightHUDWidget> FlightHUD;
+	TWeakObjectPtr<UDroneTelemetryComponent> Telemetry;
 	TWeakObjectPtr<UEnhancedPlayerInput> PlayerInput;
 	FTransform InitialPawnTransform;
 	FRotator InitialControlRotation;
@@ -1104,6 +1272,15 @@ public:
 				Test->AddError(FString::Printf(
 					TEXT("[fresh PIE %d/3] IMC_DronePrototype remained applied after PIE teardown"),
 					Cycle));
+			}
+
+			FString HUDLifecycleReason;
+			if (LifecycleState->IsHUDLifecycleStillBound(HUDLifecycleReason))
+			{
+				Test->AddError(FString::Printf(
+					TEXT("[fresh PIE %d/3] %s"),
+					Cycle,
+					*HUDLifecycleReason));
 			}
 			return true;
 		}
