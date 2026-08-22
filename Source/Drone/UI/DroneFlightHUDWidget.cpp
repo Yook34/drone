@@ -7,12 +7,15 @@
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "Drone.h"
 #include "Styling/CoreStyle.h"
 #include "Telemetry/DroneTelemetryComponent.h"
 
 namespace DroneFlightHUD
 {
+// RootCanvasName은 native fallback 전용 이름이다.
 const FName RootCanvasName(TEXT("FlightHUDRoot"));
+// 아래 네 TextName만 WBP_DroneFlightHUD Designer와 공유하는 필수 계약이다.
 const FName SpeedTextName(TEXT("SpeedValueText"));
 const FName AltitudeTextName(TEXT("AltitudeValueText"));
 const FName VerticalSpeedTextName(TEXT("VerticalSpeedValueText"));
@@ -23,9 +26,11 @@ void UDroneFlightHUDWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
 
+	// WBP가 계약을 만족하면 Designer 위젯을 쓰고, 아니면 C++ 기본 UI를 만든다.
 	BuildDefaultLayout();
 	if (UDroneTelemetryComponent* CurrentSource = TelemetrySource.Get())
 	{
+		// 첫 주기 Event를 기다리지 않고 현재 값을 바로 보여 준다.
 		ApplySnapshot(CurrentSource->GetLatestSnapshot());
 	}
 	else
@@ -37,6 +42,7 @@ void UDroneFlightHUDWidget::NativeOnInitialized()
 
 void UDroneFlightHUDWidget::NativeDestruct()
 {
+	// Weak Pointer만 비우는 것으로는 Dynamic Delegate가 자동 해제된다고 가정하지 않는다.
 	ClearTelemetrySource();
 	Super::NativeDestruct();
 }
@@ -46,6 +52,7 @@ void UDroneFlightHUDWidget::SetTelemetrySource(UDroneTelemetryComponent* InTelem
 	UDroneTelemetryComponent* CurrentSource = TelemetrySource.Get();
 	if (CurrentSource != InTelemetrySource)
 	{
+		// Pawn 전환 시 이전 Drone이 계속 HUD를 갱신하지 못하도록 먼저 구독을 끊는다.
 		if (CurrentSource)
 		{
 			CurrentSource->OnTelemetryUpdated.RemoveDynamic(
@@ -58,10 +65,12 @@ void UDroneFlightHUDWidget::SetTelemetrySource(UDroneTelemetryComponent* InTelem
 
 	if (InTelemetrySource)
 	{
+		// 같은 Source를 다시 전달받아도 중복 구독이 생기지 않는다.
 		InTelemetrySource->OnTelemetryUpdated.AddUniqueDynamic(
 			this,
 			&UDroneFlightHUDWidget::HandleTelemetryUpdated);
 		ApplySnapshot(InTelemetrySource->GetLatestSnapshot());
+		// HUD는 표시만 하므로 Mouse/조종 입력의 Hit Test를 가로채지 않는다.
 		SetVisibility(ESlateVisibility::HitTestInvisible);
 	}
 	else
@@ -89,16 +98,24 @@ void UDroneFlightHUDWidget::BuildDefaultLayout()
 		return;
 	}
 
-	if (WidgetTree->RootWidget)
+	if (TryBindBlueprintLayout())
 	{
-		SpeedValueText = Cast<UTextBlock>(WidgetTree->FindWidget(DroneFlightHUD::SpeedTextName));
-		AltitudeValueText = Cast<UTextBlock>(WidgetTree->FindWidget(DroneFlightHUD::AltitudeTextName));
-		VerticalSpeedValueText = Cast<UTextBlock>(WidgetTree->FindWidget(DroneFlightHUD::VerticalSpeedTextName));
-		HeadingValueText = Cast<UTextBlock>(WidgetTree->FindWidget(DroneFlightHUD::HeadingTextName));
-		PushCachedTextToWidgets();
 		return;
 	}
 
+	// native Class는 Designer Tree가 없으므로 C++ 기본 UI를 만든다.
+	// 컴파일된 WBP는 BindWidget 4개를 반드시 가져야 하며, 런타임에 예외적으로 계약이
+	// 불완전한 경우만 방어적으로 이 fallback Root를 쓰고 Asset 자체는 수정하지 않는다.
+	if (WidgetTree->RootWidget)
+	{
+		UE_LOG(
+			LogDrone,
+			Verbose,
+			TEXT("Flight HUD '%s' is using the native fallback because its WBP TextBlock contract is incomplete."),
+			*GetNameSafe(GetClass()));
+	}
+
+	bUsingNativeFallbackLayout = true;
 	UCanvasPanel* RootCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(
 		UCanvasPanel::StaticClass(),
 		DroneFlightHUD::RootCanvasName);
@@ -132,6 +149,7 @@ void UDroneFlightHUDWidget::BuildDefaultLayout()
 	UVerticalBoxSlot* HeaderSlot = ReadoutColumn->AddChildToVerticalBox(HeaderText);
 	HeaderSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 6.0f));
 
+	// 반복되는 TextBlock 생성 규칙은 Lambda 한 곳에 모아 네 값의 스타일을 일치시킨다.
 	auto AddValueText = [this, ReadoutColumn](const FName WidgetName) -> UTextBlock*
 	{
 		UTextBlock* ValueText = WidgetTree->ConstructWidget<UTextBlock>(
@@ -152,8 +170,39 @@ void UDroneFlightHUDWidget::BuildDefaultLayout()
 	PushCachedTextToWidgets();
 }
 
+bool UDroneFlightHUDWidget::TryBindBlueprintLayout()
+{
+	if (!WidgetTree || !WidgetTree->RootWidget)
+	{
+		return false;
+	}
+
+	// BindWidget은 자동 생성이 아니므로 이름과 타입 계약을 실행 중에도 다시 확인한다.
+	SpeedValueText = Cast<UTextBlock>(WidgetTree->FindWidget(DroneFlightHUD::SpeedTextName));
+	AltitudeValueText = Cast<UTextBlock>(WidgetTree->FindWidget(DroneFlightHUD::AltitudeTextName));
+	VerticalSpeedValueText = Cast<UTextBlock>(WidgetTree->FindWidget(DroneFlightHUD::VerticalSpeedTextName));
+	HeadingValueText = Cast<UTextBlock>(WidgetTree->FindWidget(DroneFlightHUD::HeadingTextName));
+
+	const bool bHasCompleteBlueprintLayout =
+		SpeedValueText && AltitudeValueText && VerticalSpeedValueText && HeadingValueText;
+	if (!bHasCompleteBlueprintLayout)
+	{
+		// 부분 연결 상태로 남기지 않아 이후 Push에서 일부 값만 갱신되는 상황을 막는다.
+		SpeedValueText = nullptr;
+		AltitudeValueText = nullptr;
+		VerticalSpeedValueText = nullptr;
+		HeadingValueText = nullptr;
+		return false;
+	}
+
+	bUsingNativeFallbackLayout = false;
+	PushCachedTextToWidgets();
+	return true;
+}
+
 void UDroneFlightHUDWidget::ApplySnapshot(const FDroneTelemetrySnapshot& Snapshot)
 {
+	// 단위 변환은 Telemetry에서 끝났으므로 여기서는 자릿수와 부호만 포맷한다.
 	DisplayedSnapshot = Snapshot;
 	SpeedDisplayText = FText::FromString(FString::Printf(
 		TEXT("SPD  %.1f km/h"),
@@ -165,6 +214,7 @@ void UDroneFlightHUDWidget::ApplySnapshot(const FDroneTelemetrySnapshot& Snapsho
 		TEXT("V/S  %+.1f m/s"),
 		Snapshot.VerticalSpeedMetersPerSecond));
 
+	// 359.6도처럼 반올림 결과가 360이 되면 000도 표시로 되돌린다.
 	const int32 RoundedHeading = FMath::RoundToInt(FRotator::ClampAxis(Snapshot.HeadingDegrees)) % 360;
 	HeadingDisplayText = FText::FromString(FString::Printf(
 		TEXT("HDG  %03d\u00B0"),
@@ -184,6 +234,7 @@ void UDroneFlightHUDWidget::ApplyPlaceholderText()
 
 void UDroneFlightHUDWidget::PushCachedTextToWidgets()
 {
+	// Property Binding을 사용하지 않고 주기적·즉시 갱신 Telemetry Event가 왔을 때만 Text를 바꾼다.
 	if (SpeedValueText)
 	{
 		SpeedValueText->SetText(SpeedDisplayText);

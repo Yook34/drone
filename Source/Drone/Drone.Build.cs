@@ -26,6 +26,7 @@ public class Drone : ModuleRules
 
 		if (Target.bBuildEditor)
 		{
+			// Editor 자동화 테스트에서 PIE를 시작·종료하고 실제 Blueprint Asset을 검사한다.
 			PrivateDependencyModuleNames.Add("UnrealEd");
 		}
 
@@ -46,8 +47,8 @@ public class Drone : ModuleRules
 			"Drone/Variant_SideScrolling/UI"
 		});
 
-		// Uncomment if you are using Slate UI
-		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
+		// Drone Flight HUD가 UMG와 native Slate 글꼴/색상 타입을 사용하므로
+		// UMG, Slate, SlateCore는 위 PublicDependencyModuleNames에 이미 포함되어 있다.
 
 		// Uncomment if you are using online features
 		// PrivateDependencyModuleNames.Add("OnlineSubsystem");

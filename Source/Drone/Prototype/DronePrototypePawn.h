@@ -17,11 +17,13 @@ class UStaticMeshComponent;
 struct FInputActionValue;
 
 /**
- * Isolated flight-control spike used to compare a Pawn-based drone with the
- * existing Third Person Character. Values and input assets are prototypes,
- * not final flight, control, or networking rules.
+ * 기존 Third Person Character와 분리한 Drone 조종 Prototype Pawn.
+ *
+ * 이 클래스는 입력·이동·카메라와 Telemetry Component 소유까지만 담당한다.
+ * HUD 생성은 PlayerController, 화면 외형은 WBP가 담당하므로 Pawn 교체 때 UI가 사라지지 않는다.
+ * 현재 수치와 입력 Asset은 최종 비행 물리·감도·네트워크 규칙이 아니다.
  */
-UCLASS()
+UCLASS(Blueprintable)
 class ADronePrototypePawn : public APawn
 {
 	GENERATED_BODY()
@@ -45,9 +47,11 @@ public:
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
+	/** 충돌과 이동의 기준 Root. Visual Mesh와 분리해 구매 에셋 교체 영향을 줄인다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Prototype|Components", meta=(AllowPrivateAccess="true"))
 	TObjectPtr<USphereComponent> CollisionComponent;
 
+	/** 현재 Engine 기본 도형을 표시하는 외형 전용 Component. Collision은 사용하지 않는다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Prototype|Components", meta=(AllowPrivateAccess="true"))
 	TObjectPtr<UStaticMeshComponent> VisualMeshComponent;
 
@@ -60,6 +64,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Prototype|Components", meta=(AllowPrivateAccess="true"))
 	TObjectPtr<UFloatingPawnMovement> PrototypeMovementComponent;
 
+	/** HUD와 Tutorial 기록기에 기본 0.1초 주기 및 명시적 즉시 갱신 Snapshot을 공급한다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Prototype|Components", meta=(AllowPrivateAccess="true"))
 	TObjectPtr<UDroneTelemetryComponent> TelemetryComponent;
 
@@ -103,11 +108,15 @@ protected:
 	float PrototypeMaximumCameraPitchDegrees = 20.0f;
 
 private:
+	/** 이 Pawn이 실제로 추가한 IMC만 나중에 제거하기 위해 소유 기록을 보관한다. */
 	TWeakObjectPtr<UEnhancedInputLocalPlayerSubsystem> AppliedInputSubsystem;
 	TWeakObjectPtr<UInputMappingContext> AppliedMappingContext;
 	bool bPrototypeMappingContextAdded = false;
 
+	/** 로컬 Player에 Prototype IMC를 정확히 한 번 추가한다. */
 	void ApplyPrototypeMappingContext();
+
+	/** 다른 시스템의 IMC는 건드리지 않고 이 Pawn이 추가한 Mapping만 제거한다. */
 	void RemovePrototypeMappingContext();
 
 	void Move(const FInputActionValue& Value);

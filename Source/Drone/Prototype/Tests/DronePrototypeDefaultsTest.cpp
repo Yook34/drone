@@ -20,11 +20,13 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FDronePrototypeDefaultsTest::RunTest(const FString& Parameters)
 {
+	// 첫 묶음은 native Class들이 자체 기본값만으로도 생성 가능한지 확인한다.
 	TestFalse(TEXT("Prototype Pawn class is concrete"), ADronePrototypePawn::StaticClass()->HasAnyClassFlags(CLASS_Abstract));
 	TestFalse(TEXT("Prototype GameMode class is concrete"), ADronePrototypeGameMode::StaticClass()->HasAnyClassFlags(CLASS_Abstract));
 	TestFalse(TEXT("Prototype PlayerController class is concrete"), ADronePrototypePlayerController::StaticClass()->HasAnyClassFlags(CLASS_Abstract));
 	TestFalse(TEXT("Flight HUD Widget class is concrete"), UDroneFlightHUDWidget::StaticClass()->HasAnyClassFlags(CLASS_Abstract));
 
+	// Pawn CDO에서 Component 소유권과 입력/이동 기본 구조를 검증한다.
 	const ADronePrototypePawn* PawnDefaults = GetDefault<ADronePrototypePawn>();
 	TestNotNull(TEXT("Prototype Pawn CDO exists"), PawnDefaults);
 
@@ -91,6 +93,7 @@ bool FDronePrototypeDefaultsTest::RunTest(const FString& Parameters)
 		}
 	}
 
+	// native GameMode와 Controller가 직접 선택됐을 때 사용할 기본 Class를 검증한다.
 	const ADronePrototypeGameMode* GameModeDefaults = GetDefault<ADronePrototypeGameMode>();
 	TestNotNull(TEXT("Prototype GameMode CDO exists"), GameModeDefaults);
 	if (GameModeDefaults)

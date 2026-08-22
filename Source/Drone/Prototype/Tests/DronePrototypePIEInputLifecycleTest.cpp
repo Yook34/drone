@@ -34,8 +34,11 @@
 
 namespace DronePrototypePIEInputLifecycle
 {
+// 실제 Prototype Asset 경로를 고정해 PIE가 Legacy Third Person 자산으로 되돌아가는 회귀를 막는다.
 constexpr const TCHAR* MapPackage = TEXT("/Game/Drone/Prototype/Maps/Lvl_DronePrototype");
 constexpr const TCHAR* PawnClassPath = TEXT("/Game/Drone/Prototype/Blueprints/BP_DronePrototypePawn.BP_DronePrototypePawn_C");
+constexpr const TCHAR* ControllerClassPath = TEXT("/Game/Drone/Prototype/Blueprints/BP_DronePrototypePlayerController.BP_DronePrototypePlayerController_C");
+constexpr const TCHAR* FlightHUDClassPath = TEXT("/Game/Drone/Prototype/UI/WBP_DroneFlightHUD.WBP_DroneFlightHUD_C");
 constexpr const TCHAR* ContextPath = TEXT("/Game/Drone/Prototype/Input/IMC_DronePrototype.IMC_DronePrototype");
 constexpr const TCHAR* MovePath = TEXT("/Game/Drone/Prototype/Input/Actions/IA_DronePrototype_Move.IA_DronePrototype_Move");
 constexpr const TCHAR* AltitudePath = TEXT("/Game/Drone/Prototype/Input/Actions/IA_DronePrototype_Altitude.IA_DronePrototype_Altitude");
@@ -70,6 +73,7 @@ bool HasPIEWorld()
 
 FRequestPlaySessionParams MakePlayParams()
 {
+	// 각 회차를 새 1인 Standalone PIE로 만들어 이전 회차의 UI/Input 상태 재사용을 막는다.
 	ULevelEditorPlaySettings* Settings = NewObject<ULevelEditorPlaySettings>(GetTransientPackage());
 	Settings->SetPlayNetMode(EPlayNetMode::PIE_Standalone);
 	Settings->SetRunUnderOneProcess(true);
@@ -647,11 +651,32 @@ private:
 			return EAcquireResult::Fatal;
 		}
 
+		UClass* ExpectedControllerClass = LoadClass<ADronePrototypePlayerController>(nullptr, ControllerClassPath);
+		if (!ExpectedControllerClass || FoundController->GetClass() != ExpectedControllerClass)
+		{
+			OutReason = FString::Printf(
+				TEXT("PlayerController class is %s, expected BP_DronePrototypePlayerController_C"),
+				*GetNameSafe(FoundController->GetClass()));
+			return EAcquireResult::Fatal;
+		}
+
+		// PlayerController가 만든 단 하나의 HUD가 현재 Drone Telemetry에 연결됐는지 확인한다.
 		UDroneFlightHUDWidget* FoundFlightHUD = FoundController->GetFlightHUDWidget();
 		if (!FoundFlightHUD || !FoundFlightHUD->IsInViewport())
 		{
 			OutReason = TEXT("Flight HUD Widget is not on the local Player screen yet");
 			return EAcquireResult::Wait;
+		}
+
+		UClass* ExpectedFlightHUDClass = LoadClass<UDroneFlightHUDWidget>(nullptr, FlightHUDClassPath);
+		if (!ExpectedFlightHUDClass
+			|| FoundFlightHUD->GetClass() != ExpectedFlightHUDClass
+			|| FoundFlightHUD->IsUsingNativeFallbackLayout())
+		{
+			OutReason = FString::Printf(
+				TEXT("Flight HUD class is %s or its WBP Designer contract fell back to native layout"),
+				*GetNameSafe(FoundFlightHUD->GetClass()));
+			return EAcquireResult::Fatal;
 		}
 
 		if (FoundFlightHUD->GetTelemetrySource() != FoundPawn->GetTelemetryComponent()
@@ -675,6 +700,7 @@ private:
 			return EAcquireResult::Fatal;
 		}
 
+		// 새 PIE마다 이전 Widget이 남지 않고 World/Viewport에 정확히 하나만 있어야 한다.
 		int32 WorldFlightHUDCount = 0;
 		int32 VisibleFlightHUDCount = 0;
 		for (TObjectIterator<UDroneFlightHUDWidget> It; It; ++It)

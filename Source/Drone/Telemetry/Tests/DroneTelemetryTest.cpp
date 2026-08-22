@@ -10,6 +10,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FDroneTelemetryCalculationTest::RunTest(const FString& Parameters)
 {
+	// World 없이 순수 계산 함수만 호출해 Unreal 단위 변환과 기준면 계산을 검증한다.
 	const FVector VelocityCentimetersPerSecond(300.0f, 400.0f, 200.0f);
 	const FDroneTelemetrySnapshot Snapshot = UDroneTelemetryComponent::CalculateSnapshot(
 		VelocityCentimetersPerSecond,
@@ -28,9 +29,10 @@ bool FDroneTelemetryCalculationTest::RunTest(const FString& Parameters)
 		TEXT("Vertical speed converts from centimeters per second to meters per second"),
 		FMath::IsNearlyEqual(Snapshot.VerticalSpeedMetersPerSecond, 2.0f));
 	TestTrue(
-		TEXT("Negative yaw is normalized to a compass heading"),
+		TEXT("Negative world yaw is normalized to a zero-to-359 heading"),
 		FMath::IsNearlyEqual(Snapshot.HeadingDegrees, 315.0f));
 
+	// 기준면 아래 음수 고도와 여러 바퀴 회전한 Yaw의 경계값을 별도로 확인한다.
 	const FDroneTelemetrySnapshot WrappedHeadingSnapshot = UDroneTelemetryComponent::CalculateSnapshot(
 		FVector::ZeroVector,
 		FVector(0.0f, 0.0f, -100.0f),
@@ -57,6 +59,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FDroneTelemetryDefaultsTest::RunTest(const FString& Parameters)
 {
+	// CDO 검사는 Editor에서 조정 가능한 기본값이 의도치 않게 바뀌는 회귀를 잡는다.
 	const UDroneTelemetryComponent* TelemetryDefaults = GetDefault<UDroneTelemetryComponent>();
 	TestNotNull(TEXT("Telemetry component CDO exists"), TelemetryDefaults);
 
@@ -75,6 +78,7 @@ bool FDroneTelemetryDefaultsTest::RunTest(const FString& Parameters)
 			0.0f);
 	}
 
+	// 실제 인스턴스에서는 Course/Mission이 기준면을 런타임에 바꿀 수 있어야 한다.
 	UDroneTelemetryComponent* TelemetryInstance = NewObject<UDroneTelemetryComponent>();
 	TestNotNull(TEXT("Telemetry component instance can be created"), TelemetryInstance);
 	if (TelemetryInstance)
