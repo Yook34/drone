@@ -4,7 +4,10 @@
 #include "Prototype/DronePrototypePawn.h"
 #include "Prototype/DronePrototypePlayerController.h"
 #include "Tutorial/DroneTrainingCourse.h"
+#include "Tutorial/DroneTrainingGate.h"
+#include "Tutorial/DroneTrainingGateSequenceComponent.h"
 
+#include "Components/BoxComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/SplineComponent.h"
 #include "Components/SplineMeshComponent.h"
@@ -24,6 +27,8 @@ namespace DroneTrainingPIESmoke
 constexpr const TCHAR* MapPackage = TEXT("/Game/Drone/Tutorial/Maps/Lvl_DroneTraining");
 constexpr const TCHAR* CourseClassPath =
 	TEXT("/Game/Drone/Tutorial/Blueprints/BP_DroneTrainingCourse.BP_DroneTrainingCourse_C");
+constexpr const TCHAR* GateClassPath =
+	TEXT("/Game/Drone/Tutorial/Blueprints/BP_DroneTrainingGate.BP_DroneTrainingGate_C");
 constexpr const TCHAR* PawnClassPath =
 	TEXT("/Game/Drone/Prototype/Blueprints/BP_DronePrototypePawn.BP_DronePrototypePawn_C");
 constexpr const TCHAR* ControllerClassPath =
@@ -95,10 +100,12 @@ public:
 		}
 
 		UClass* CourseClass = LoadClass<ADroneTrainingCourse>(nullptr, CourseClassPath);
+		UClass* GateClass = LoadClass<ADroneTrainingGate>(nullptr, GateClassPath);
 		UClass* PawnClass = LoadClass<ADronePrototypePawn>(nullptr, PawnClassPath);
 		UClass* ControllerClass = LoadClass<ADronePrototypePlayerController>(nullptr, ControllerClassPath);
 		UClass* FlightHUDClass = LoadClass<UDroneFlightHUDWidget>(nullptr, FlightHUDClassPath);
 		Test->TestNotNull(TEXT("Expected BP_DroneTrainingCourse Class loads"), CourseClass);
+		Test->TestNotNull(TEXT("Expected BP_DroneTrainingGate Class loads"), GateClass);
 		Test->TestNotNull(TEXT("Expected BP_DronePrototypePawn Class loads"), PawnClass);
 		Test->TestNotNull(TEXT("Expected BP_DronePrototypePlayerController Class loads"), ControllerClass);
 		Test->TestNotNull(TEXT("Expected WBP_DroneFlightHUD Class loads"), FlightHUDClass);
@@ -136,6 +143,21 @@ public:
 		Test->TestEqual(TEXT("Training PIE has exactly one Course"), CourseCount, 1);
 		Test->TestNotNull(TEXT("Training PIE contains the Course"), Course);
 
+		TArray<ADroneTrainingGate*> PlacedGates;
+		for (TActorIterator<ADroneTrainingGate> GateIt(PIEWorld); GateIt; ++GateIt)
+		{
+			ADroneTrainingGate* Gate = *GateIt;
+			if (Gate)
+			{
+				PlacedGates.Add(Gate);
+				if (GateClass)
+				{
+					Test->TestTrue(TEXT("Training PIE Gate uses BP_DroneTrainingGate"), Gate->GetClass() == GateClass);
+				}
+			}
+		}
+		Test->TestEqual(TEXT("Training PIE has exactly four Gates"), PlacedGates.Num(), 4);
+
 		int32 RecastNavMeshCount = 0;
 		for (TActorIterator<AActor> ActorIt(PIEWorld); ActorIt; ++ActorIt)
 		{
@@ -146,7 +168,7 @@ public:
 			}
 		}
 		Test->TestTrue(
-			TEXT("Training PIE contains saved Recast Navigation data"),
+			TEXT("Training PIE contains a saved RecastNavMesh Actor"),
 			RecastNavMeshCount > 0);
 
 		if (Course)
@@ -214,6 +236,68 @@ public:
 					Drone->GetActorLocation().Equals(SweepEnd, 1.0f));
 				Test->TestTrue(TEXT("Training PIE guide line is never a Hit Actor"), SweepHit.GetActor() != Course);
 			}
+
+			// 실제 BP Gate 목록에서 순서·방향·중복 판정과 Visual 상태 전환을 함께 검사한다.
+			UDroneTrainingGateSequenceComponent* GateSequence = Course->GetGateSequenceComponent();
+			Test->TestNotNull(TEXT("Training PIE Course owns the Gate Sequence"), GateSequence);
+			if (GateSequence)
+			{
+				Test->TestTrue(TEXT("Training PIE Gate configuration is valid"), GateSequence->IsConfigurationValid());
+				Test->TestEqual(TEXT("Training PIE Gate Sequence has four Gates"), GateSequence->GetConfiguredGateCount(), 4);
+				Test->TestEqual(TEXT("Training PIE initially expects Gate 0"), GateSequence->GetCurrentGateIndex(), 0);
+
+				const TArray<TObjectPtr<ADroneTrainingGate>>& OrderedGates = GateSequence->GetOrderedGates();
+				if (Drone && OrderedGates.Num() == 4)
+				{
+					auto Entry = [](const ADroneTrainingGate* Gate)
+					{
+						return Gate->GetActorLocation() - Gate->GetForwardDirectionWorld() * 300.0f;
+					};
+					auto Exit = [](const ADroneTrainingGate* Gate)
+					{
+						return Gate->GetActorLocation() + Gate->GetForwardDirectionWorld() * 300.0f;
+					};
+
+					ADroneTrainingGate* Gate0 = OrderedGates[0];
+					ADroneTrainingGate* Gate1 = OrderedGates[1];
+					ADroneTrainingGate* Gate2 = OrderedGates[2];
+					ADroneTrainingGate* Gate3 = OrderedGates[3];
+					Test->TestNotNull(TEXT("Training PIE Gate 0 exists"), Gate0);
+					Test->TestNotNull(TEXT("Training PIE Gate 1 exists"), Gate1);
+					Test->TestNotNull(TEXT("Training PIE Gate 2 exists"), Gate2);
+					Test->TestNotNull(TEXT("Training PIE Gate 3 exists"), Gate3);
+
+					if (Gate0 && Gate1 && Gate2 && Gate3)
+					{
+						Test->TestEqual(
+							TEXT("Training PIE rejects a future Gate"),
+							GateSequence->TryAcceptTraversal(Gate1, Drone, Entry(Gate1), Exit(Gate1)),
+							EDroneTrainingGatePassResult::WrongOrder);
+						Test->TestEqual(
+							TEXT("Training PIE rejects reverse traversal"),
+							GateSequence->TryAcceptTraversal(Gate0, Drone, Exit(Gate0), Entry(Gate0)),
+							EDroneTrainingGatePassResult::WrongDirection);
+						Test->TestEqual(
+							TEXT("Training PIE accepts current Gate forward"),
+							GateSequence->TryAcceptTraversal(Gate0, Drone, Entry(Gate0), Exit(Gate0)),
+							EDroneTrainingGatePassResult::Accepted);
+						Test->TestEqual(
+							TEXT("Training PIE rejects duplicate completed Gate"),
+							GateSequence->TryAcceptTraversal(Gate0, Drone, Entry(Gate0), Exit(Gate0)),
+							EDroneTrainingGatePassResult::AlreadyCompleted);
+						Test->TestEqual(
+							TEXT("Training PIE accepts next Gate forward"),
+							GateSequence->TryAcceptTraversal(Gate1, Drone, Entry(Gate1), Exit(Gate1)),
+							EDroneTrainingGatePassResult::Accepted);
+						Test->TestEqual(TEXT("Training PIE advances exactly two Gates"), GateSequence->GetAcceptedGateCount(), 2);
+						Test->TestEqual(TEXT("Gate 0 visual is Completed"), Gate0->GetGateVisualState(), EDroneTrainingGateVisualState::Completed);
+						Test->TestEqual(TEXT("Gate 1 visual is Completed"), Gate1->GetGateVisualState(), EDroneTrainingGateVisualState::Completed);
+						Test->TestEqual(TEXT("Gate 2 visual is Current"), Gate2->GetGateVisualState(), EDroneTrainingGateVisualState::Current);
+						Test->TestEqual(TEXT("Gate 3 visual remains Inactive"), Gate3->GetGateVisualState(), EDroneTrainingGateVisualState::Inactive);
+						GateSequence->ResetSequence();
+					}
+				}
+			}
 		}
 
 		return true;
@@ -222,6 +306,81 @@ public:
 private:
 	FAutomationTestBase* Test;
 	double StartedAt = 0.0;
+};
+
+/** 실제 저장된 BP Gate의 Delegate와 Begin/End Overlap까지 PIE Frame 사이에서 통합 검증한다. */
+class FValidateTrainingPIEActualGateOverlapCommand final : public IAutomationLatentCommand
+{
+public:
+	explicit FValidateTrainingPIEActualGateOverlapCommand(FAutomationTestBase* InTest)
+		: Test(InTest)
+	{
+	}
+
+	virtual bool Update() override
+	{
+		UWorld* PIEWorld = FindPIEWorld();
+		ADronePrototypePlayerController* Controller = PIEWorld
+			? Cast<ADronePrototypePlayerController>(PIEWorld->GetFirstPlayerController())
+			: nullptr;
+		ADronePrototypePawn* Drone = Controller ? Cast<ADronePrototypePawn>(Controller->GetPawn()) : nullptr;
+		ADroneTrainingCourse* Course = nullptr;
+		if (PIEWorld)
+		{
+			for (TActorIterator<ADroneTrainingCourse> CourseIt(PIEWorld); CourseIt; ++CourseIt)
+			{
+				Course = *CourseIt;
+				break;
+			}
+		}
+
+		UDroneTrainingGateSequenceComponent* Sequence = Course ? Course->GetGateSequenceComponent() : nullptr;
+		const TArray<TObjectPtr<ADroneTrainingGate>>* OrderedGates = Sequence
+			? &Sequence->GetOrderedGates()
+			: nullptr;
+		ADroneTrainingGate* Gate0 = OrderedGates && OrderedGates->IsValidIndex(0)
+			? (*OrderedGates)[0].Get()
+			: nullptr;
+		if (!PIEWorld || !Drone || !Sequence || !Gate0)
+		{
+			Test->AddError(TEXT("Actual BP Gate overlap validation could not resolve PIE Drone, Sequence, or Gate 0"));
+			return true;
+		}
+
+		const FVector Forward = Gate0->GetForwardDirectionWorld();
+		if (Phase == 0)
+		{
+			Sequence->ResetSequence();
+			Drone->SetActorLocation(Gate0->GetActorLocation() - Forward * 300.0f, false);
+			Phase = 1;
+			return false;
+		}
+
+		if (Phase == 1)
+		{
+			Drone->SetActorLocation(Gate0->GetActorLocation() - Forward * 30.0f, false);
+			Phase = 2;
+			return false;
+		}
+
+		if (Phase == 2)
+		{
+			FHitResult SweepHit;
+			Drone->SetActorLocation(Gate0->GetActorLocation() + Forward * 300.0f, true, &SweepHit);
+			Test->TestFalse(TEXT("Actual BP Gate Trigger and Ring do not block the PIE Drone"), SweepHit.bBlockingHit);
+			Phase = 3;
+			return false;
+		}
+
+		Test->TestEqual(TEXT("Actual BP Gate Begin/End Overlap advances once"), Sequence->GetAcceptedGateCount(), 1);
+		Test->TestEqual(TEXT("Actual BP Gate 0 becomes Completed"), Gate0->GetGateVisualState(), EDroneTrainingGateVisualState::Completed);
+		Test->TestEqual(TEXT("Actual BP Gate 1 becomes Current"), Sequence->GetCurrentGateIndex(), 1);
+		return true;
+	}
+
+private:
+	FAutomationTestBase* Test;
+	int32 Phase = 0;
 };
 } // namespace DroneTrainingPIESmoke
 
@@ -264,6 +423,7 @@ bool FDroneTrainingPIESmokeTest::RunTest(const FString& Parameters)
 
 	ADD_LATENT_AUTOMATION_COMMAND(FStartPIEForAutomationCommand(MakePlayParams()));
 	ADD_LATENT_AUTOMATION_COMMAND(FValidateTrainingPIECommand(this));
+	ADD_LATENT_AUTOMATION_COMMAND(FValidateTrainingPIEActualGateOverlapCommand(this));
 	ADD_LATENT_AUTOMATION_COMMAND(FEndPlayMapCommand());
 	return true;
 }

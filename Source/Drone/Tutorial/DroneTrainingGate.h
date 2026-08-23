@@ -1,0 +1,168 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/Actor.h"
+#include "Tutorial/DroneTrainingGateTypes.h"
+#include "DroneTrainingGate.generated.h"
+
+class UBoxComponent;
+class UDroneTrainingGateSequenceComponent;
+class UMaterialInstanceDynamic;
+class UMaterialInterface;
+class USceneComponent;
+class UStaticMesh;
+class UStaticMeshComponent;
+
+/**
+ * Tutorial의 원형 Greybox Visual과 판정용 Box Trigger를 분리한 Gate Actor.
+ *
+ * 이 Actor는 Overlap의 진입/이탈 위치를 Sequence Component에 전달할 뿐,
+ * 현재 Gate가 무엇인지 직접 결정하지 않는다. Visual은 항상 비충돌이고
+ * Trigger만 Pawn 채널 Query Overlap을 사용한다.
+ */
+UCLASS(Blueprintable)
+class ADroneTrainingGate : public AActor
+{
+	GENERATED_BODY()
+
+public:
+	ADroneTrainingGate();
+
+	virtual void OnConstruction(const FTransform& Transform) override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	UFUNCTION(BlueprintPure, Category="Tutorial|Gate")
+	FName GetCourseId() const { return CourseId; }
+
+	UFUNCTION(BlueprintPure, Category="Tutorial|Gate")
+	int32 GetGateIndex() const { return GateIndex; }
+
+	/** TUT-02에서는 저장·표시만 하며 Timing이나 자동 정렬 계산에는 사용하지 않는다. */
+	UFUNCTION(BlueprintPure, Category="Tutorial|Gate")
+	float GetSegmentDistance() const { return SegmentDistance; }
+
+	UFUNCTION(BlueprintPure, Category="Tutorial|Gate")
+	FVector GetForwardDirectionWorld() const;
+
+	/** Box 모서리가 아니라 실제 원형 통과 영역을 판정할 때 사용하는 반지름이다. */
+	UFUNCTION(BlueprintPure, Category="Tutorial|Gate")
+	float GetTriggerApertureRadiusCentimeters() const { return FMath::Max(TriggerHalfSizeCentimeters, 1.0f); }
+
+	UFUNCTION(BlueprintPure, Category="Tutorial|Gate")
+	EDroneTrainingGateVisualState GetGateVisualState() const { return GateVisualState; }
+
+	UFUNCTION(BlueprintPure, Category="Tutorial|Gate")
+	UBoxComponent* GetGateTrigger() const { return GateTrigger; }
+
+	UFUNCTION(BlueprintPure, Category="Tutorial|Gate")
+	int32 GetRingVisualSegmentCount() const { return RingVisualSegments.Num(); }
+
+	/** 자동화와 디버그에서 아직 EndOverlap되지 않은 진입 기록을 확인한다. */
+	int32 GetPendingTraversalCount() const { return PendingEntryLocations.Num(); }
+
+	UDroneTrainingGateSequenceComponent* GetAssignedGateSequence() const { return AssignedGateSequence.Get(); }
+
+	/** 자동화와 Editor 생성 도구가 같은 메타데이터 계약을 사용하게 한다. */
+	void ConfigureGateDefinition(
+		FName InCourseId,
+		int32 InGateIndex,
+		float InSegmentDistance);
+
+	/** Sequence만 호출해 Current/Completed/Inactive 표시 상태를 바꾼다. */
+	void SetGateVisualState(EDroneTrainingGateVisualState NewState);
+
+private:
+	friend class UDroneTrainingGateSequenceComponent;
+
+	/** Sequence 연결은 Course 구성 검증을 통과한 Gate에만 설정한다. */
+	void AssignGateSequence(UDroneTrainingGateSequenceComponent* InSequence);
+
+	/** Reset이나 Sequence 종료 전에 진행 중인 BeginOverlap 기록을 폐기한다. */
+	void CancelPendingTraversals();
+
+	/** BP 직렬화 뒤에도 Visual과 Trigger의 서로 다른 Collision 계약을 복원한다. */
+	void ApplyComponentRules();
+
+	/** Engine Cube 조각을 원 둘레에 배치해 구매 에셋 없는 Greybox Ring을 만든다. */
+	void RefreshRingVisual();
+
+	/** 상태별 색을 프로젝트 Material의 Color Parameter에 적용한다. */
+	void RefreshStateMaterial();
+
+	UFUNCTION()
+	void HandleTriggerBeginOverlap(
+		UPrimitiveComponent* OverlappedComponent,
+		AActor* OtherActor,
+		UPrimitiveComponent* OtherComponent,
+		int32 OtherBodyIndex,
+		bool bFromSweep,
+		const FHitResult& SweepResult);
+
+	UFUNCTION()
+	void HandleTriggerEndOverlap(
+		UPrimitiveComponent* OverlappedComponent,
+		AActor* OtherActor,
+		UPrimitiveComponent* OtherComponent,
+		int32 OtherBodyIndex);
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Tutorial|Gate|Components", meta=(AllowPrivateAccess="true"))
+	TObjectPtr<USceneComponent> GateRoot;
+
+	/** 실제 판정 전용. 화면 Ring과 별개이며 Pawn만 Overlap한다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Tutorial|Gate|Components", meta=(AllowPrivateAccess="true"))
+	TObjectPtr<UBoxComponent> GateTrigger;
+
+	/** 원을 근사하는 비충돌 Cube 조각들이다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Tutorial|Gate|Components", meta=(AllowPrivateAccess="true"))
+	TArray<TObjectPtr<UStaticMeshComponent>> RingVisualSegments;
+
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category="Tutorial|Gate|Definition", meta=(AllowPrivateAccess="true"))
+	FName CourseId = TEXT("DroneTrainingCourse");
+
+	/** Course의 OrderedGates 배열 위치와 반드시 같아야 한다. */
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category="Tutorial|Gate|Definition", meta=(ClampMin="0", AllowPrivateAccess="true"))
+	int32 GateIndex = 0;
+
+	/** 후속 Segment 기록용 메타데이터. TUT-02 판정에는 사용하지 않는다. */
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category="Tutorial|Gate|Definition", meta=(ClampMin="0.0", Units="cm", AllowPrivateAccess="true"))
+	float SegmentDistance = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tutorial|Gate|Visual", meta=(ClampMin="50.0", Units="cm", AllowPrivateAccess="true"))
+	float GateRadiusCentimeters = 220.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tutorial|Gate|Visual", meta=(ClampMin="2.0", Units="cm", AllowPrivateAccess="true"))
+	float RingThicknessCentimeters = 24.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tutorial|Gate|Trigger", meta=(ClampMin="1.0", Units="cm", AllowPrivateAccess="true"))
+	float TriggerHalfDepthCentimeters = 60.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tutorial|Gate|Trigger", meta=(ClampMin="1.0", Units="cm", AllowPrivateAccess="true"))
+	float TriggerHalfSizeCentimeters = 175.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tutorial|Gate|Visual", meta=(AllowPrivateAccess="true"))
+	TObjectPtr<UStaticMesh> RingSegmentMesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tutorial|Gate|Visual", meta=(AllowPrivateAccess="true"))
+	TObjectPtr<UMaterialInterface> RingMaterial;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tutorial|Gate|Visual", meta=(AllowPrivateAccess="true"))
+	FLinearColor InactiveColor = FLinearColor(0.02f, 0.08f, 0.18f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tutorial|Gate|Visual", meta=(AllowPrivateAccess="true"))
+	FLinearColor CurrentColor = FLinearColor(0.10f, 1.0f, 0.18f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tutorial|Gate|Visual", meta=(AllowPrivateAccess="true"))
+	FLinearColor CompletedColor = FLinearColor(0.02f, 0.70f, 1.0f, 1.0f);
+
+	UPROPERTY(Transient)
+	EDroneTrainingGateVisualState GateVisualState = EDroneTrainingGateVisualState::Inactive;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> DynamicRingMaterial;
+
+	UPROPERTY(Transient)
+	TWeakObjectPtr<UDroneTrainingGateSequenceComponent> AssignedGateSequence;
+
+	/** 한 Actor의 Begin 위치를 최초 한 번만 보존해 중복 Begin Event가 방향을 바꾸지 못하게 한다. */
+	TMap<TWeakObjectPtr<AActor>, FVector> PendingEntryLocations;
+};

@@ -4,10 +4,14 @@
 #include "Prototype/DronePrototypeGameMode.h"
 #include "Prototype/DronePrototypePawn.h"
 #include "Tutorial/DroneTrainingCourse.h"
+#include "Tutorial/DroneTrainingGate.h"
+#include "Tutorial/DroneTrainingGateSequenceComponent.h"
 
+#include "Components/BoxComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/SplineComponent.h"
 #include "Components/SplineMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerStart.h"
@@ -19,6 +23,8 @@ namespace DroneTrainingAssets
 {
 constexpr const TCHAR* CourseClassPath =
 	TEXT("/Game/Drone/Tutorial/Blueprints/BP_DroneTrainingCourse.BP_DroneTrainingCourse_C");
+constexpr const TCHAR* GateClassPath =
+	TEXT("/Game/Drone/Tutorial/Blueprints/BP_DroneTrainingGate.BP_DroneTrainingGate_C");
 constexpr const TCHAR* GameModeClassPath =
 	TEXT("/Game/Drone/Prototype/Blueprints/BP_DronePrototypeGameMode.BP_DronePrototypeGameMode_C");
 constexpr const TCHAR* TrainingMapObjectPath =
@@ -46,6 +52,15 @@ bool FDroneTrainingAssetTest::RunTest(const FString& Parameters)
 
 	UClass* GameModeClass = LoadClass<ADronePrototypeGameMode>(nullptr, DroneTrainingAssets::GameModeClassPath);
 	TestNotNull(TEXT("Prototype BP GameMode used by the Training Map loads"), GameModeClass);
+
+	UClass* GateClass = LoadClass<ADroneTrainingGate>(nullptr, DroneTrainingAssets::GateClassPath);
+	TestNotNull(TEXT("BP_DroneTrainingGate generated Class loads"), GateClass);
+	if (GateClass)
+	{
+		TestTrue(
+			TEXT("BP_DroneTrainingGate derives from the native Training Gate"),
+			GateClass->IsChildOf(ADroneTrainingGate::StaticClass()));
+	}
 
 	UMaterialInterface* GuideMaterial = LoadObject<UMaterialInterface>(
 		nullptr,
@@ -85,7 +100,9 @@ bool FDroneTrainingAssetTest::RunTest(const FString& Parameters)
 	int32 PlayerStartCount = 0;
 	int32 PlacedPrototypePawnCount = 0;
 	int32 CourseCount = 0;
+	int32 GateCount = 0;
 	ADroneTrainingCourse* PlacedCourse = nullptr;
+	TArray<ADroneTrainingGate*> PlacedGates;
 	for (TActorIterator<AActor> ActorIt(TrainingWorld); ActorIt; ++ActorIt)
 	{
 		AActor* Actor = *ActorIt;
@@ -101,6 +118,11 @@ bool FDroneTrainingAssetTest::RunTest(const FString& Parameters)
 			++CourseCount;
 			PlacedCourse = Cast<ADroneTrainingCourse>(Actor);
 		}
+		if (ADroneTrainingGate* Gate = Cast<ADroneTrainingGate>(Actor))
+		{
+			++GateCount;
+			PlacedGates.Add(Gate);
+		}
 
 		// 새 Map에 기존 Template/Variant Actor를 직접 배치하는 회귀를 잡는다.
 		const FString ActorClassPath = Actor->GetClass()->GetPathName();
@@ -113,6 +135,7 @@ bool FDroneTrainingAssetTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Training Map has exactly one PlayerStart"), PlayerStartCount, 1);
 	TestEqual(TEXT("Training Map has no pre-placed Prototype Pawn"), PlacedPrototypePawnCount, 0);
 	TestEqual(TEXT("Training Map has exactly one Training Course"), CourseCount, 1);
+	TestEqual(TEXT("Training Map has exactly four Greybox Gates"), GateCount, 4);
 	TestNotNull(TEXT("Training Map contains a Training Course instance"), PlacedCourse);
 
 	if (PlacedCourse)
@@ -121,9 +144,58 @@ bool FDroneTrainingAssetTest::RunTest(const FString& Parameters)
 		TestTrue(
 			TEXT("Placed Course uses M_DroneTrainingGuide"),
 			PlacedCourse->GetCourseLineMaterial() == GuideMaterial);
-
-		// 로드된 Map Actor에서도 Construction 결과를 재현한 뒤 전체 Primitive 안전 계약을 검사한다.
+		// 로드 직후 transient Sequence 상태와 표시 Segment를 실제 Construction 경로로 복원한다.
 		PlacedCourse->RerunConstructionScripts();
+
+		// TUT-02는 Level Actor 검색이 아니라 Course의 명시적 배열을 순서 기준으로 사용한다.
+		const TArray<TObjectPtr<ADroneTrainingGate>>& OrderedGates = PlacedCourse->GetOrderedGates();
+		TestEqual(TEXT("Placed Course explicitly references all four Gates"), OrderedGates.Num(), 4);
+		TSet<const ADroneTrainingGate*> UniqueOrderedGates;
+		for (int32 GatePosition = 0; GatePosition < OrderedGates.Num(); ++GatePosition)
+		{
+			ADroneTrainingGate* Gate = OrderedGates[GatePosition];
+			TestNotNull(*FString::Printf(TEXT("Ordered Gate %d exists"), GatePosition), Gate);
+			if (!Gate)
+			{
+				continue;
+			}
+
+			TestTrue(
+				*FString::Printf(TEXT("Ordered Gate %d is uniquely referenced"), GatePosition),
+				!UniqueOrderedGates.Contains(Gate));
+			UniqueOrderedGates.Add(Gate);
+			TestTrue(
+				*FString::Printf(TEXT("Ordered Gate %d is placed in the loaded Map"), GatePosition),
+				PlacedGates.Contains(Gate));
+			if (GateClass)
+			{
+				TestTrue(
+					*FString::Printf(TEXT("Ordered Gate %d uses BP_DroneTrainingGate"), GatePosition),
+					Gate->GetClass() == GateClass);
+			}
+			TestEqual(
+				*FString::Printf(TEXT("Ordered Gate %d shares the CourseId"), GatePosition),
+				Gate->GetCourseId(),
+				PlacedCourse->GetCourseId());
+			TestEqual(
+				*FString::Printf(TEXT("Ordered Gate %d mirrors its array position"), GatePosition),
+				Gate->GetGateIndex(),
+				GatePosition);
+			TestTrue(
+				*FString::Printf(TEXT("Ordered Gate %d stores non-negative SegmentDistance metadata"), GatePosition),
+				Gate->GetSegmentDistance() >= 0.0f);
+		}
+
+		UDroneTrainingGateSequenceComponent* GateSequence = PlacedCourse->GetGateSequenceComponent();
+		TestNotNull(TEXT("Placed Course owns a Gate Sequence Component"), GateSequence);
+		if (GateSequence)
+		{
+			TestTrue(TEXT("Placed Gate configuration is valid"), GateSequence->IsConfigurationValid());
+			TestEqual(TEXT("Placed Gate Sequence contains four Gates"), GateSequence->GetConfiguredGateCount(), 4);
+			TestEqual(TEXT("Placed Gate Sequence starts at Gate 0"), GateSequence->GetCurrentGateIndex(), 0);
+		}
+
+		// 로드된 Map Actor의 전체 Primitive 안전 계약을 검사한다.
 		const USplineComponent* CourseSpline = PlacedCourse->GetCourseSpline();
 		TestNotNull(TEXT("Placed Course owns its Spline"), CourseSpline);
 		const int32 ExpectedSegmentCount = CourseSpline
@@ -166,6 +238,43 @@ bool FDroneTrainingAssetTest::RunTest(const FString& Parameters)
 					SegmentMaterial && SegmentMaterial->GetMaterial() == GuideMaterial);
 				TestTrue(TEXT("Map guide Segment is runtime visible"), Segment->IsVisible() && !Segment->bHiddenInGame);
 			}
+		}
+	}
+
+	// Gate Visual과 Trigger가 서로 다른 Collision 계약을 유지하는지 실제 Map Actor에서 검사한다.
+	for (ADroneTrainingGate* Gate : PlacedGates)
+	{
+		if (!Gate)
+		{
+			continue;
+		}
+
+		TestTrue(TEXT("Placed Gate Actor collision stays enabled for its Trigger"), Gate->GetActorEnableCollision());
+		UBoxComponent* Trigger = Gate->GetGateTrigger();
+		TestNotNull(TEXT("Placed Gate owns its Box Trigger"), Trigger);
+		if (Trigger)
+		{
+			TestEqual(TEXT("Placed Gate Trigger is QueryOnly"), Trigger->GetCollisionEnabled(), ECollisionEnabled::QueryOnly);
+			TestTrue(TEXT("Placed Gate Trigger generates overlaps"), Trigger->GetGenerateOverlapEvents());
+			TestEqual(TEXT("Placed Gate Trigger overlaps Pawn"), Trigger->GetCollisionResponseToChannel(ECC_Pawn), ECR_Overlap);
+			TestFalse(TEXT("Placed Gate Trigger cannot affect Navigation"), Trigger->CanEverAffectNavigation());
+		}
+
+		TInlineComponentArray<UStaticMeshComponent*> RingSegments;
+		Gate->GetComponents(RingSegments);
+		TestEqual(TEXT("Placed Gate has sixteen Ring segments"), RingSegments.Num(), 16);
+		for (UStaticMeshComponent* Segment : RingSegments)
+		{
+			if (!Segment)
+			{
+				continue;
+			}
+
+			TestNotNull(TEXT("Placed Ring segment has a Mesh"), Segment->GetStaticMesh().Get());
+			TestEqual(TEXT("Placed Ring segment has no collision"), Segment->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+			TestFalse(TEXT("Placed Ring segment creates no overlaps"), Segment->GetGenerateOverlapEvents());
+			TestFalse(TEXT("Placed Ring segment cannot affect Navigation"), Segment->CanEverAffectNavigation());
+			TestTrue(TEXT("Placed Ring segment is visible"), Segment->IsVisible() && !Segment->bHiddenInGame);
 		}
 	}
 

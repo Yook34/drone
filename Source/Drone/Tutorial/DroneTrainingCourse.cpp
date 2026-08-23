@@ -8,6 +8,8 @@
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+#include "Tutorial/DroneTrainingGate.h"
+#include "Tutorial/DroneTrainingGateSequenceComponent.h"
 #include "UObject/ConstructorHelpers.h"
 
 namespace DroneTrainingCourse
@@ -39,6 +41,9 @@ ADroneTrainingCourse::ADroneTrainingCourse()
 	CourseSpline->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	CourseSpline->SetGenerateOverlapEvents(false);
 	CourseSpline->SetCanEverAffectNavigation(false);
+
+	// Gate 순서 상태는 Primitive가 아니므로 Course의 비간섭 규칙과 충돌하지 않는다.
+	GateSequenceComponent = CreateDefaultSubobject<UDroneTrainingGateSequenceComponent>(TEXT("GateSequenceComponent"));
 
 	// 처음 Map에 배치하자마자 비행 가능한 S자형 Greybox 경로가 보이게 한다.
 	// 이 좌표는 최종 코스가 아니며 Level/BP Viewport에서 자유롭게 수정한다.
@@ -73,6 +78,7 @@ void ADroneTrainingCourse::OnConstruction(const FTransform& Transform)
 	Super::OnConstruction(Transform);
 	ApplyNonInterferenceRules();
 	RebuildCourseLineSegments();
+	ConfigureGateSequence();
 }
 
 void ADroneTrainingCourse::BeginPlay()
@@ -82,6 +88,18 @@ void ADroneTrainingCourse::BeginPlay()
 	// BP/Level 직렬화 값이나 Cook 방식이 달라도 런타임 비간섭 계약을 다시 고정한다.
 	ApplyNonInterferenceRules();
 	RebuildCourseLineSegments();
+	ConfigureGateSequence();
+}
+
+void ADroneTrainingCourse::ConfigureOrderedGates(const TArray<ADroneTrainingGate*>& InOrderedGates)
+{
+	OrderedGates.Reset(InOrderedGates.Num());
+	for (ADroneTrainingGate* Gate : InOrderedGates)
+	{
+		OrderedGates.Add(Gate);
+	}
+
+	ConfigureGateSequence();
 }
 
 int32 ADroneTrainingCourse::GetCourseLineSegmentCount() const
@@ -131,6 +149,14 @@ void ADroneTrainingCourse::ApplyNonInterferenceRules()
 		Primitive->SetGenerateOverlapEvents(false);
 		Primitive->SetSimulatePhysics(false);
 		Primitive->SetCanEverAffectNavigation(false);
+	}
+}
+
+void ADroneTrainingCourse::ConfigureGateSequence()
+{
+	if (GateSequenceComponent)
+	{
+		GateSequenceComponent->ConfigureSequence(CourseId, OrderedGates);
 	}
 }
 

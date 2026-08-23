@@ -6,17 +6,19 @@
 
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
+class UDroneTrainingGateSequenceComponent;
 class USceneComponent;
 class USplineComponent;
 class USplineMeshComponent;
 class UStaticMesh;
+class ADroneTrainingGate;
 
 /**
- * Tutorial 비행 경로의 위치와 표시만 담당하는 Course Actor.
+ * Tutorial 비행 경로 표시와 명시적 Gate 구성 묶음을 담당하는 Course Actor.
  *
- * TUT-01에서는 편집 가능한 Spline과 화면에 보이는 안내선까지만 제공한다.
- * Gate Trigger, 통과 순서, Lap/Segment 기록은 다음 카드에서 별도 Actor와
- * 상태 객체로 추가해 이 표시 Actor가 게임 규칙까지 떠맡지 않게 한다.
+ * TUT-01의 편집 가능한 Spline과 안내선을 유지한다. TUT-02에서는 CourseId와
+ * 명시적 Gate 배열이라는 구성 데이터만 추가한다. Gate Trigger는 별도 Actor,
+ * 순서·방향 상태는 비-Primitive Component가 맡아 표시 Actor와 판정을 분리한다.
  *
  * 안내선은 Drone이 실제로 통과하는 공간에 놓이므로 Actor, Spline,
  * 생성되는 모든 SplineMesh의 Collision·Overlap·Physics·Navigation 영향을
@@ -46,6 +48,17 @@ public:
 	UFUNCTION(BlueprintPure, Category="Tutorial|Course")
 	UMaterialInterface* GetCourseLineMaterial() const { return CourseLineMaterial; }
 
+	UFUNCTION(BlueprintPure, Category="Tutorial|Course|Gates")
+	FName GetCourseId() const { return CourseId; }
+
+	UFUNCTION(BlueprintPure, Category="Tutorial|Course|Gates")
+	UDroneTrainingGateSequenceComponent* GetGateSequenceComponent() const { return GateSequenceComponent; }
+
+	const TArray<TObjectPtr<ADroneTrainingGate>>& GetOrderedGates() const { return OrderedGates; }
+
+	/** 자동화나 후속 Editor 도구가 명시적 배열을 설정한 뒤 같은 검증 경로를 사용한다. */
+	void ConfigureOrderedGates(const TArray<ADroneTrainingGate*>& InOrderedGates);
+
 	/** 자동화와 후속 Gate 배치가 같은 이름 계약을 사용할 수 있게 공개한다. */
 	static FName GetGeneratedSegmentTag();
 
@@ -57,6 +70,18 @@ protected:
 	/** Designer가 점과 Tangent를 편집하는 경로 데이터. 이 Component 자체도 충돌하지 않는다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Tutorial|Course", meta=(AllowPrivateAccess="true"))
 	TObjectPtr<USplineComponent> CourseSpline;
+
+	/** Gate 진행 상태는 Primitive가 아닌 이 Component 한 곳에서만 바뀐다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Tutorial|Course|Gates", meta=(AllowPrivateAccess="true"))
+	TObjectPtr<UDroneTrainingGateSequenceComponent> GateSequenceComponent;
+
+	/** Gate와 Course가 같은 구성에 속하는지 확인하는 명시적 식별자다. */
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category="Tutorial|Course|Gates", meta=(AllowPrivateAccess="true"))
+	FName CourseId = TEXT("DroneTrainingCourse");
+
+	/** 배열 위치가 통과 순서의 단일 기준이며 각 GateIndex는 같은 위치를 미러링해야 한다. */
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category="Tutorial|Course|Gates", meta=(AllowPrivateAccess="true"))
+	TArray<TObjectPtr<ADroneTrainingGate>> OrderedGates;
 
 	/**
 	 * SplineMesh에 사용할 임시 Greybox Mesh.
@@ -91,6 +116,9 @@ protected:
 private:
 	/** BP/Level에서 값을 잘못 바꿔도 Construction과 BeginPlay에서 비간섭 계약을 복원한다. */
 	void ApplyNonInterferenceRules();
+
+	/** 구성 데이터와 비-Primitive Sequence 상태를 연결하고 Gate 외형을 초기화한다. */
+	void ConfigureGateSequence();
 
 	/** OnConstruction/BeginPlay에서 같은 안전 규칙으로 Segment를 재생성한다. */
 	void RebuildCourseLineSegments();
