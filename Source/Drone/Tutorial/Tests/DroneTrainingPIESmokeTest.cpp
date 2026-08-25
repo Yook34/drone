@@ -30,7 +30,7 @@ constexpr const TCHAR* CourseClassPath =
 constexpr const TCHAR* GateClassPath =
 	TEXT("/Game/Drone/Tutorial/Blueprints/BP_DroneTrainingGate.BP_DroneTrainingGate_C");
 constexpr const TCHAR* PawnClassPath =
-	TEXT("/Game/Drone/Prototype/Blueprints/BP_DronePrototypePawn.BP_DronePrototypePawn_C");
+	TEXT("/Game/Drone/Integrations/DronePackFPV/BP_DroneFPVIntegration.BP_DroneFPVIntegration_C");
 constexpr const TCHAR* ControllerClassPath =
 	TEXT("/Game/Drone/Prototype/Blueprints/BP_DronePrototypePlayerController.BP_DronePrototypePlayerController_C");
 constexpr const TCHAR* FlightHUDClassPath =
@@ -106,7 +106,7 @@ public:
 		UClass* FlightHUDClass = LoadClass<UDroneFlightHUDWidget>(nullptr, FlightHUDClassPath);
 		Test->TestNotNull(TEXT("Expected BP_DroneTrainingCourse Class loads"), CourseClass);
 		Test->TestNotNull(TEXT("Expected BP_DroneTrainingGate Class loads"), GateClass);
-		Test->TestNotNull(TEXT("Expected BP_DronePrototypePawn Class loads"), PawnClass);
+		Test->TestNotNull(TEXT("Expected BP_DroneFPVIntegration Class loads"), PawnClass);
 		Test->TestNotNull(TEXT("Expected BP_DronePrototypePlayerController Class loads"), ControllerClass);
 		Test->TestNotNull(TEXT("Expected WBP_DroneFlightHUD Class loads"), FlightHUDClass);
 
@@ -122,7 +122,7 @@ public:
 		Test->TestNotNull(TEXT("Training PIE spawns and possesses the Prototype Drone"), Drone);
 		if (Drone && PawnClass)
 		{
-			Test->TestTrue(TEXT("Training PIE uses BP_DronePrototypePawn"), Drone->GetClass() == PawnClass);
+			Test->TestTrue(TEXT("Training PIE uses BP_DroneFPVIntegration"), Drone->GetClass() == PawnClass);
 		}
 
 		UDroneFlightHUDWidget* FlightHUD = Controller ? Controller->GetFlightHUDWidget() : nullptr;

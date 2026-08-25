@@ -36,7 +36,7 @@ namespace DronePrototypePIEInputLifecycle
 {
 // 실제 Prototype Asset 경로를 고정해 PIE가 Legacy Third Person 자산으로 되돌아가는 회귀를 막는다.
 constexpr const TCHAR* MapPackage = TEXT("/Game/Drone/Prototype/Maps/Lvl_DronePrototype");
-constexpr const TCHAR* PawnClassPath = TEXT("/Game/Drone/Prototype/Blueprints/BP_DronePrototypePawn.BP_DronePrototypePawn_C");
+constexpr const TCHAR* PawnClassPath = TEXT("/Game/Drone/Integrations/DronePackFPV/BP_DroneFPVIntegration.BP_DroneFPVIntegration_C");
 constexpr const TCHAR* ControllerClassPath = TEXT("/Game/Drone/Prototype/Blueprints/BP_DronePrototypePlayerController.BP_DronePrototypePlayerController_C");
 constexpr const TCHAR* FlightHUDClassPath = TEXT("/Game/Drone/Prototype/UI/WBP_DroneFlightHUD.WBP_DroneFlightHUD_C");
 constexpr const TCHAR* ContextPath = TEXT("/Game/Drone/Prototype/Input/IMC_DronePrototype.IMC_DronePrototype");
@@ -746,7 +746,7 @@ private:
 		if (!ExpectedPawnClass || FoundPawn->GetClass() != ExpectedPawnClass)
 		{
 			OutReason = FString::Printf(
-				TEXT("spawned Pawn class is %s, expected BP_DronePrototypePawn_C"),
+				TEXT("spawned Pawn class is %s, expected BP_DroneFPVIntegration_C"),
 				*GetNameSafe(FoundPawn->GetClass()));
 			return EAcquireResult::Fatal;
 		}
