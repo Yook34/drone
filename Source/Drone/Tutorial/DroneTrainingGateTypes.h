@@ -4,6 +4,7 @@
 #include "DroneTrainingGateTypes.generated.h"
 
 class ADroneTrainingGate;
+class AActor;
 
 /** Ring Gate가 현재 Course 진행에서 어떤 의미로 보이는지 나타낸다. */
 UENUM(BlueprintType)
@@ -27,8 +28,16 @@ enum class EDroneTrainingGatePassResult : uint8
 	AlreadyCompleted UMETA(DisplayName="Already Completed")
 };
 
-/** 정상 통과 한 번마다 발생한다. Lap과 Timing 계산은 이 Event를 후속 카드에서 구독한다. */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+/** 정상 통과 한 번마다 실제 통과 Actor와 승인 위치를 함께 전달한다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(
 	FDroneTrainingGateAcceptedSignature,
 	ADroneTrainingGate*, Gate,
-	int32, AcceptedGateCount);
+	AActor*, PassingActor,
+	int32, AcceptedGateCount,
+	FVector, AcceptedWorldLocation);
+
+/** Restart 또는 런타임 구성 무효화로 현재 진행을 더 이어 갈 수 없을 때 발생한다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FDroneTrainingGateSequenceResetSignature);
+
+/** Gate 배열 또는 Course 구성이 다시 적용되어 기록 비교 기준도 새로 시작할 때 발생한다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FDroneTrainingGateSequenceReconfiguredSignature);

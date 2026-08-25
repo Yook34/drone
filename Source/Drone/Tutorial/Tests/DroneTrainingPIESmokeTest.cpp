@@ -6,6 +6,7 @@
 #include "Tutorial/DroneTrainingCourse.h"
 #include "Tutorial/DroneTrainingGate.h"
 #include "Tutorial/DroneTrainingGateSequenceComponent.h"
+#include "Tutorial/DroneTrainingLapRecorderComponent.h"
 
 #include "Components/BoxComponent.h"
 #include "Components/PrimitiveComponent.h"
@@ -239,7 +240,14 @@ public:
 
 			// 실제 BP Gate 목록에서 순서·방향·중복 판정과 Visual 상태 전환을 함께 검사한다.
 			UDroneTrainingGateSequenceComponent* GateSequence = Course->GetGateSequenceComponent();
+			UDroneTrainingLapRecorderComponent* LapRecorder = Course->GetLapRecorderComponent();
 			Test->TestNotNull(TEXT("Training PIE Course owns the Gate Sequence"), GateSequence);
+			Test->TestNotNull(TEXT("Training PIE Course owns the Lap Recorder"), LapRecorder);
+			if (LapRecorder)
+			{
+				Test->TestTrue(TEXT("Training PIE Lap Recorder is ready"), LapRecorder->IsRecordingReady());
+				Test->TestFalse(TEXT("Training PIE has not started a Lap yet"), LapRecorder->IsLapRecording());
+			}
 			if (GateSequence)
 			{
 				Test->TestTrue(TEXT("Training PIE Gate configuration is valid"), GateSequence->IsConfigurationValid());
@@ -281,6 +289,11 @@ public:
 							TEXT("Training PIE accepts current Gate forward"),
 							GateSequence->TryAcceptTraversal(Gate0, Drone, Entry(Gate0), Exit(Gate0)),
 							EDroneTrainingGatePassResult::Accepted);
+						if (LapRecorder)
+						{
+							Test->TestTrue(TEXT("Gate 0 starts the Training Lap"), LapRecorder->IsLapRecording());
+							Test->TestEqual(TEXT("Gate 0 creates no Segment"), LapRecorder->GetRecordedSegmentCount(), 0);
+						}
 						Test->TestEqual(
 							TEXT("Training PIE rejects duplicate completed Gate"),
 							GateSequence->TryAcceptTraversal(Gate0, Drone, Entry(Gate0), Exit(Gate0)),
@@ -289,12 +302,23 @@ public:
 							TEXT("Training PIE accepts next Gate forward"),
 							GateSequence->TryAcceptTraversal(Gate1, Drone, Entry(Gate1), Exit(Gate1)),
 							EDroneTrainingGatePassResult::Accepted);
+						if (LapRecorder)
+						{
+							// 이 직접 호출 두 번은 같은 PIE Frame이므로 0초 기록을 성공 Segment로 남기지 않는다.
+							Test->TestFalse(TEXT("Same-frame traversal is not retained as a timed Lap"), LapRecorder->IsLapRecording());
+							Test->TestEqual(TEXT("Same-frame traversal creates no timed Segment"), LapRecorder->GetRecordedSegmentCount(), 0);
+						}
 						Test->TestEqual(TEXT("Training PIE advances exactly two Gates"), GateSequence->GetAcceptedGateCount(), 2);
 						Test->TestEqual(TEXT("Gate 0 visual is Completed"), Gate0->GetGateVisualState(), EDroneTrainingGateVisualState::Completed);
 						Test->TestEqual(TEXT("Gate 1 visual is Completed"), Gate1->GetGateVisualState(), EDroneTrainingGateVisualState::Completed);
 						Test->TestEqual(TEXT("Gate 2 visual is Current"), Gate2->GetGateVisualState(), EDroneTrainingGateVisualState::Current);
 						Test->TestEqual(TEXT("Gate 3 visual remains Inactive"), Gate3->GetGateVisualState(), EDroneTrainingGateVisualState::Inactive);
 						GateSequence->ResetSequence();
+						if (LapRecorder)
+						{
+							Test->TestFalse(TEXT("Sequence Reset discards the partial Lap"), LapRecorder->IsLapRecording());
+							Test->TestEqual(TEXT("Partial PIE Lap is not successful history"), LapRecorder->GetSuccessfulLapCount(), 0);
+						}
 					}
 				}
 			}
@@ -335,13 +359,14 @@ public:
 		}
 
 		UDroneTrainingGateSequenceComponent* Sequence = Course ? Course->GetGateSequenceComponent() : nullptr;
+		UDroneTrainingLapRecorderComponent* LapRecorder = Course ? Course->GetLapRecorderComponent() : nullptr;
 		const TArray<TObjectPtr<ADroneTrainingGate>>* OrderedGates = Sequence
 			? &Sequence->GetOrderedGates()
 			: nullptr;
 		ADroneTrainingGate* Gate0 = OrderedGates && OrderedGates->IsValidIndex(0)
 			? (*OrderedGates)[0].Get()
 			: nullptr;
-		if (!PIEWorld || !Drone || !Sequence || !Gate0)
+		if (!PIEWorld || !Drone || !Sequence || !LapRecorder || !Gate0)
 		{
 			Test->AddError(TEXT("Actual BP Gate overlap validation could not resolve PIE Drone, Sequence, or Gate 0"));
 			return true;
@@ -375,6 +400,8 @@ public:
 		Test->TestEqual(TEXT("Actual BP Gate Begin/End Overlap advances once"), Sequence->GetAcceptedGateCount(), 1);
 		Test->TestEqual(TEXT("Actual BP Gate 0 becomes Completed"), Gate0->GetGateVisualState(), EDroneTrainingGateVisualState::Completed);
 		Test->TestEqual(TEXT("Actual BP Gate 1 becomes Current"), Sequence->GetCurrentGateIndex(), 1);
+		Test->TestTrue(TEXT("Actual BP Gate 0 overlap starts Lap recording"), LapRecorder->IsLapRecording());
+		Test->TestEqual(TEXT("Actual BP Gate 0 overlap still has zero Segments"), LapRecorder->GetRecordedSegmentCount(), 0);
 		return true;
 	}
 

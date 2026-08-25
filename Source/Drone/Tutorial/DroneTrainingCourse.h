@@ -7,6 +7,7 @@
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
 class UDroneTrainingGateSequenceComponent;
+class UDroneTrainingLapRecorderComponent;
 class USceneComponent;
 class USplineComponent;
 class USplineMeshComponent;
@@ -16,9 +17,9 @@ class ADroneTrainingGate;
 /**
  * Tutorial 비행 경로 표시와 명시적 Gate 구성 묶음을 담당하는 Course Actor.
  *
- * TUT-01의 편집 가능한 Spline과 안내선을 유지한다. TUT-02에서는 CourseId와
- * 명시적 Gate 배열이라는 구성 데이터만 추가한다. Gate Trigger는 별도 Actor,
- * 순서·방향 상태는 비-Primitive Component가 맡아 표시 Actor와 판정을 분리한다.
+ * TUT-01의 편집 가능한 Spline과 안내선을 유지한다. TUT-02의 CourseId/명시적 Gate
+ * 배열과 순서 판정을 보관하고, TUT-03의 Lap Recorder를 소유한다. Gate Trigger는
+ * 별도 Actor이며 순서 판정과 기록도 각각 비-Primitive Component로 분리한다.
  *
  * 안내선은 Drone이 실제로 통과하는 공간에 놓이므로 Actor, Spline,
  * 생성되는 모든 SplineMesh의 Collision·Overlap·Physics·Navigation 영향을
@@ -34,6 +35,7 @@ public:
 	ADroneTrainingCourse();
 
 	virtual void OnConstruction(const FTransform& Transform) override;
+	virtual void PostInitializeComponents() override;
 	virtual void BeginPlay() override;
 
 	/** Level 또는 BP Viewport에서 점을 움직여 초기 Greybox 경로를 편집한다. */
@@ -53,6 +55,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Tutorial|Course|Gates")
 	UDroneTrainingGateSequenceComponent* GetGateSequenceComponent() const { return GateSequenceComponent; }
+
+	/** 정상 Gate Event로 시간·실제 이동 거리·평균 속도를 계산하는 TUT-03 기록기다. */
+	UFUNCTION(BlueprintPure, Category="Tutorial|Course|Recording")
+	UDroneTrainingLapRecorderComponent* GetLapRecorderComponent() const { return LapRecorderComponent; }
 
 	const TArray<TObjectPtr<ADroneTrainingGate>>& GetOrderedGates() const { return OrderedGates; }
 
@@ -74,6 +80,10 @@ protected:
 	/** Gate 진행 상태는 Primitive가 아닌 이 Component 한 곳에서만 바뀐다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Tutorial|Course|Gates", meta=(AllowPrivateAccess="true"))
 	TObjectPtr<UDroneTrainingGateSequenceComponent> GateSequenceComponent;
+
+	/** Gate 판정과 분리된 원본 Segment/Lap 기록 Component. Tick과 별도 Timer를 만들지 않는다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Tutorial|Course|Recording", meta=(AllowPrivateAccess="true"))
+	TObjectPtr<UDroneTrainingLapRecorderComponent> LapRecorderComponent;
 
 	/** Gate와 Course가 같은 구성에 속하는지 확인하는 명시적 식별자다. */
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category="Tutorial|Course|Gates", meta=(AllowPrivateAccess="true"))

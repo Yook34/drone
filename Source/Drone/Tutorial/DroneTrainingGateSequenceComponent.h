@@ -29,7 +29,7 @@ public:
 		FName InCourseId,
 		const TArray<TObjectPtr<ADroneTrainingGate>>& InOrderedGates);
 
-	/** 진행 상태만 Gate 0으로 되돌린다. Lap/Timing 데이터는 아직 존재하지 않는다. */
+	/** 진행 상태를 Gate 0으로 되돌리고 기록 계층에도 현재 시도 취소를 알린다. */
 	UFUNCTION(BlueprintCallable, Category="Tutorial|Gate Sequence")
 	void ResetSequence();
 
@@ -61,9 +61,17 @@ public:
 
 	const TArray<TObjectPtr<ADroneTrainingGate>>& GetOrderedGates() const { return OrderedGates; }
 
-	/** TUT-03 이후 기록 계층이 정상 Gate 통과만 구독할 수 있는 경계 Event다. */
+	/** 기록 계층이 정상 Gate 통과와 실제 통과 Actor/위치만 구독하는 경계 Event다. */
 	UPROPERTY(BlueprintAssignable, Category="Tutorial|Gate Sequence")
 	FDroneTrainingGateAcceptedSignature OnGateAccepted;
+
+	/** Restart와 Course 재구성이 부분 Lap을 남기지 않도록 알리는 경계 Event다. */
+	UPROPERTY(BlueprintAssignable, Category="Tutorial|Gate Sequence")
+	FDroneTrainingGateSequenceResetSignature OnSequenceReset;
+
+	/** Course 구성이 다시 적용됐음을 알린다. 기록기는 성공 History까지 새 기준으로 비운다. */
+	UPROPERTY(BlueprintAssignable, Category="Tutorial|Gate Sequence")
+	FDroneTrainingGateSequenceReconfiguredSignature OnSequenceReconfigured;
 
 private:
 	/** 기존 Gate가 이 Component를 계속 참조하지 않도록 약한 역참조를 정리한다. */

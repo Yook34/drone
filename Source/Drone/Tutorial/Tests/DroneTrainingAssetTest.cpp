@@ -6,6 +6,7 @@
 #include "Tutorial/DroneTrainingCourse.h"
 #include "Tutorial/DroneTrainingGate.h"
 #include "Tutorial/DroneTrainingGateSequenceComponent.h"
+#include "Tutorial/DroneTrainingLapRecorderComponent.h"
 
 #include "Components/BoxComponent.h"
 #include "Components/PrimitiveComponent.h"
@@ -187,7 +188,14 @@ bool FDroneTrainingAssetTest::RunTest(const FString& Parameters)
 		}
 
 		UDroneTrainingGateSequenceComponent* GateSequence = PlacedCourse->GetGateSequenceComponent();
+		UDroneTrainingLapRecorderComponent* LapRecorder = PlacedCourse->GetLapRecorderComponent();
 		TestNotNull(TEXT("Placed Course owns a Gate Sequence Component"), GateSequence);
+		TestNotNull(TEXT("Placed Course owns a Lap Recorder Component"), LapRecorder);
+		if (LapRecorder)
+		{
+			TestFalse(TEXT("Lap Recorder adds no per-frame Tick"), LapRecorder->PrimaryComponentTick.bCanEverTick);
+			TestFalse(TEXT("Loaded Map has no in-progress Lap"), LapRecorder->IsLapRecording());
+		}
 		if (GateSequence)
 		{
 			TestTrue(TEXT("Placed Gate configuration is valid"), GateSequence->IsConfigurationValid());

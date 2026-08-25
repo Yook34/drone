@@ -10,6 +10,7 @@
 #include "Materials/MaterialInterface.h"
 #include "Tutorial/DroneTrainingGate.h"
 #include "Tutorial/DroneTrainingGateSequenceComponent.h"
+#include "Tutorial/DroneTrainingLapRecorderComponent.h"
 #include "UObject/ConstructorHelpers.h"
 
 namespace DroneTrainingCourse
@@ -44,6 +45,7 @@ ADroneTrainingCourse::ADroneTrainingCourse()
 
 	// Gate 순서 상태는 Primitive가 아니므로 Course의 비간섭 규칙과 충돌하지 않는다.
 	GateSequenceComponent = CreateDefaultSubobject<UDroneTrainingGateSequenceComponent>(TEXT("GateSequenceComponent"));
+	LapRecorderComponent = CreateDefaultSubobject<UDroneTrainingLapRecorderComponent>(TEXT("LapRecorderComponent"));
 
 	// 처음 Map에 배치하자마자 비행 가능한 S자형 Greybox 경로가 보이게 한다.
 	// 이 좌표는 최종 코스가 아니며 Level/BP Viewport에서 자유롭게 수정한다.
@@ -79,6 +81,17 @@ void ADroneTrainingCourse::OnConstruction(const FTransform& Transform)
 	ApplyNonInterferenceRules();
 	RebuildCourseLineSegments();
 	ConfigureGateSequence();
+}
+
+void ADroneTrainingCourse::PostInitializeComponents()
+{
+	Super::PostInitializeComponents();
+
+	// BeginPlay의 BP Event나 초기 Overlap보다 먼저 정상 Gate Event를 받을 준비를 끝낸다.
+	if (GetWorld() && GetWorld()->IsGameWorld() && LapRecorderComponent)
+	{
+		LapRecorderComponent->InitializeRecorder(GateSequenceComponent);
+	}
 }
 
 void ADroneTrainingCourse::BeginPlay()

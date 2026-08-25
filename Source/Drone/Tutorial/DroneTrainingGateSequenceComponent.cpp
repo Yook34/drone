@@ -43,6 +43,8 @@ bool UDroneTrainingGateSequenceComponent::ConfigureSequence(
 	}
 
 	RefreshGateVisualStates();
+	// 모든 새 상태를 먼저 반영해 Event 구독자가 재구성된 값을 읽게 한다.
+	OnSequenceReconfigured.Broadcast();
 	return bConfigurationValid;
 }
 
@@ -63,6 +65,8 @@ void UDroneTrainingGateSequenceComponent::ResetSequence()
 		DetachFromConfiguredGates();
 	}
 	RefreshGateVisualStates();
+	// 상태, pending overlap, 외형을 모두 갱신한 뒤 구독자에게 알린다.
+	OnSequenceReset.Broadcast();
 }
 
 EDroneTrainingGatePassResult UDroneTrainingGateSequenceComponent::TryAcceptTraversal(
@@ -77,6 +81,7 @@ EDroneTrainingGatePassResult UDroneTrainingGateSequenceComponent::TryAcceptTrave
 		bConfigurationValid = false;
 		DetachFromConfiguredGates();
 		RefreshGateVisualStates();
+		OnSequenceReset.Broadcast();
 		return EDroneTrainingGatePassResult::InvalidConfiguration;
 	}
 
@@ -109,7 +114,7 @@ EDroneTrainingGatePassResult UDroneTrainingGateSequenceComponent::TryAcceptTrave
 
 	++NextExpectedGatePosition;
 	RefreshGateVisualStates();
-	OnGateAccepted.Broadcast(Gate, NextExpectedGatePosition);
+	OnGateAccepted.Broadcast(Gate, PassingActor, NextExpectedGatePosition, ExitWorldLocation);
 	return EDroneTrainingGatePassResult::Accepted;
 }
 
