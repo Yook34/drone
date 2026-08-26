@@ -181,11 +181,9 @@ public:
 
 			const USplineComponent* CourseSpline = Course->GetCourseSpline();
 			Test->TestNotNull(TEXT("Runtime Course owns its Spline"), CourseSpline);
-			const int32 ExpectedSegmentCount = CourseSpline
-				? FMath::Max(0, CourseSpline->GetNumberOfSplinePoints() - 1)
-				: 0;
+			const int32 ExpectedSegmentCount = Course->GetExpectedCourseLineSegmentCount();
 			Test->TestEqual(
-				TEXT("Runtime Course displays every Spline segment"),
+				TEXT("Runtime Course displays every distance-sampled Spline segment"),
 				Course->GetCourseLineSegmentCount(),
 				ExpectedSegmentCount);
 
@@ -245,6 +243,9 @@ public:
 			Test->TestNotNull(TEXT("Training PIE Course owns the Lap Recorder"), LapRecorder);
 			if (LapRecorder)
 			{
+				Test->TestTrue(
+					TEXT("Training PIE Flight HUD is connected to the Course Lap Recorder"),
+					FlightHUD && FlightHUD->GetTrainingRecordSource() == LapRecorder);
 				Test->TestTrue(TEXT("Training PIE Lap Recorder is ready"), LapRecorder->IsRecordingReady());
 				Test->TestFalse(TEXT("Training PIE has not started a Lap yet"), LapRecorder->IsLapRecording());
 			}

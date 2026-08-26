@@ -206,12 +206,10 @@ bool FDroneTrainingAssetTest::RunTest(const FString& Parameters)
 		// 로드된 Map Actor의 전체 Primitive 안전 계약을 검사한다.
 		const USplineComponent* CourseSpline = PlacedCourse->GetCourseSpline();
 		TestNotNull(TEXT("Placed Course owns its Spline"), CourseSpline);
-		const int32 ExpectedSegmentCount = CourseSpline
-			? FMath::Max(0, CourseSpline->GetNumberOfSplinePoints() - 1)
-			: 0;
+		const int32 ExpectedSegmentCount = PlacedCourse->GetExpectedCourseLineSegmentCount();
 		TestTrue(TEXT("Placed Course Spline has a positive length"), CourseSpline && CourseSpline->GetSplineLength() > 0.0f);
 		TestEqual(
-			TEXT("Placed Course creates every runtime guide Segment"),
+			TEXT("Placed Course creates every distance-sampled guide Segment"),
 			PlacedCourse->GetCourseLineSegmentCount(),
 			ExpectedSegmentCount);
 

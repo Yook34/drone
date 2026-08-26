@@ -68,13 +68,15 @@ bool FDroneTrainingCourseTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	const int32 ExpectedSegmentCount = Course->GetCourseSpline()
-		? FMath::Max(0, Course->GetCourseSpline()->GetNumberOfSplinePoints() - 1)
-		: 0;
+	const int32 ExpectedSegmentCount = Course->GetExpectedCourseLineSegmentCount();
 	TestEqual(
-		TEXT("Construction creates one visible guide Segment between each Spline point"),
+		TEXT("Construction creates the distance-sampled guide Segments"),
 		Course->GetCourseLineSegmentCount(),
 		ExpectedSegmentCount);
+	TestTrue(
+		TEXT("Long curved paths use more visual Segments than control-point intervals"),
+		Course->GetCourseSpline()
+			&& ExpectedSegmentCount > Course->GetCourseSpline()->GetNumberOfSplinePoints() - 1);
 
 	// 모든 Primitive를 포괄 검사해 재구성 중 남은 옛 Segment도 안전 계약을 우회하지 못하게 한다.
 	TInlineComponentArray<UPrimitiveComponent*> CoursePrimitives;

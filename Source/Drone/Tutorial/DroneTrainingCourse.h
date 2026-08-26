@@ -46,6 +46,14 @@ public:
 	UFUNCTION(BlueprintPure, Category="Tutorial|Course")
 	int32 GetCourseLineSegmentCount() const;
 
+	/** 현재 Spline 길이와 표시 Segment 목표 길이로 계산한 실제 생성 예정 수다. */
+	UFUNCTION(BlueprintPure, Category="Tutorial|Course")
+	int32 GetExpectedCourseLineSegmentCount() const;
+
+	/** 곡선을 짧게 나눠 표시할 때 사용하는 Segment 목표 길이다. */
+	UFUNCTION(BlueprintPure, Category="Tutorial|Course")
+	float GetCourseLineSegmentLengthCentimeters() const { return CourseLineSegmentLengthCentimeters; }
+
 	/** 현재 표시 Segment에 적용할 Material. 기본값은 프로젝트 전용 Unlit 발광 재질이다. */
 	UFUNCTION(BlueprintPure, Category="Tutorial|Course")
 	UMaterialInterface* GetCourseLineMaterial() const { return CourseLineMaterial; }
@@ -64,6 +72,10 @@ public:
 
 	/** 자동화나 후속 Editor 도구가 명시적 배열을 설정한 뒤 같은 검증 경로를 사용한다. */
 	void ConfigureOrderedGates(const TArray<ADroneTrainingGate*>& InOrderedGates);
+
+	/** OrderedGates 배열 위치를 CourseId와 GateIndex의 단일 기준으로 다시 적용한다. */
+	UFUNCTION(CallInEditor, BlueprintCallable, Category="Tutorial|Course|Gates")
+	void SynchronizeGateDefinitions();
 
 	/** 자동화와 후속 Gate 배치가 같은 이름 계약을 사용할 수 있게 공개한다. */
 	static FName GetGeneratedSegmentTag();
@@ -118,6 +130,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tutorial|Course|Visual",
 		meta=(Units="cm", AllowPrivateAccess="true"))
 	float CourseLineVerticalOffsetCentimeters = 0.0f;
+
+	/**
+	 * 발광 안내 Mesh 한 조각의 목표 길이. 제어점 사이를 그대로 늘이지 않고 이 길이마다
+	 * Spline을 다시 표본화해 급커브에서도 육안으로 매끄럽게 보이게 한다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tutorial|Course|Visual",
+		meta=(ClampMin="25.0", UIMin="25.0", UIMax="1000.0", Units="cm", AllowPrivateAccess="true"))
+	float CourseLineSegmentLengthCentimeters = 200.0f;
 
 	/** 기본 발광 Material의 Color Parameter에 적용되는 초기 안내색이다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Tutorial|Course|Visual", meta=(AllowPrivateAccess="true"))

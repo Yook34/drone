@@ -68,6 +68,10 @@ public:
 	UFUNCTION(BlueprintPure, Category="Tutorial|Recording")
 	int32 GetRecordedSegmentCount() const { return CurrentSegments.Num(); }
 
+	/** 진행 중 이미 확정된 구간 원본. HUD는 Event를 놓친 뒤 연결돼도 이 값으로 복구한다. */
+	UFUNCTION(BlueprintPure, Category="Tutorial|Recording")
+	TArray<FDroneTrainingSegmentRecord> GetCurrentSegments() const { return CurrentSegments; }
+
 	/** 거리(cm)와 시간(s)을 안전하게 km/h로 바꾼다. 0/음수/비정상 입력은 0이다. */
 	static double CalculateAverageSpeedKilometersPerHour(
 		double DistanceCentimeters,

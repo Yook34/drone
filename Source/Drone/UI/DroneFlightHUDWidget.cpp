@@ -10,6 +10,7 @@
 #include "Drone.h"
 #include "Styling/CoreStyle.h"
 #include "Telemetry/DroneTelemetryComponent.h"
+#include "Tutorial/DroneTrainingLapRecorderComponent.h"
 
 namespace DroneFlightHUD
 {
@@ -28,6 +29,7 @@ void UDroneFlightHUDWidget::NativeOnInitialized()
 
 	// WBP가 계약을 만족하면 Designer 위젯을 쓰고, 아니면 C++ 기본 UI를 만든다.
 	BuildDefaultLayout();
+	BuildTrainingLayout();
 	if (UDroneTelemetryComponent* CurrentSource = TelemetrySource.Get())
 	{
 		// 첫 주기 Event를 기다리지 않고 현재 값을 바로 보여 준다.
@@ -43,6 +45,7 @@ void UDroneFlightHUDWidget::NativeOnInitialized()
 void UDroneFlightHUDWidget::NativeDestruct()
 {
 	// Weak Pointer만 비우는 것으로는 Dynamic Delegate가 자동 해제된다고 가정하지 않는다.
+	ClearTrainingRecordSource();
 	ClearTelemetrySource();
 	Super::NativeDestruct();
 }
@@ -89,6 +92,66 @@ void UDroneFlightHUDWidget::ClearTelemetrySource()
 void UDroneFlightHUDWidget::HandleTelemetryUpdated(const FDroneTelemetrySnapshot Snapshot)
 {
 	ApplySnapshot(Snapshot);
+}
+
+void UDroneFlightHUDWidget::SetTrainingRecordSource(
+	UDroneTrainingLapRecorderComponent* InTrainingRecordSource)
+{
+	UDroneTrainingLapRecorderComponent* CurrentSource = TrainingRecordSource.Get();
+	if (CurrentSource != InTrainingRecordSource && CurrentSource)
+	{
+		CurrentSource->OnLapStarted.RemoveDynamic(this, &UDroneFlightHUDWidget::HandleTrainingLapStarted);
+		CurrentSource->OnSegmentRecorded.RemoveDynamic(this, &UDroneFlightHUDWidget::HandleTrainingSegmentRecorded);
+		CurrentSource->OnLapCompleted.RemoveDynamic(this, &UDroneFlightHUDWidget::HandleTrainingLapCompleted);
+	}
+
+	TrainingRecordSource = InTrainingRecordSource;
+	DisplayedTrainingSegments.Reset();
+	if (!InTrainingRecordSource)
+	{
+		RefreshTrainingDisplay();
+		if (TrainingReadoutPanel)
+		{
+			TrainingReadoutPanel->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		return;
+	}
+
+	InTrainingRecordSource->OnLapStarted.AddUniqueDynamic(this, &UDroneFlightHUDWidget::HandleTrainingLapStarted);
+	InTrainingRecordSource->OnSegmentRecorded.AddUniqueDynamic(this, &UDroneFlightHUDWidget::HandleTrainingSegmentRecorded);
+	InTrainingRecordSource->OnLapCompleted.AddUniqueDynamic(this, &UDroneFlightHUDWidget::HandleTrainingLapCompleted);
+
+	DisplayedTrainingSegments = InTrainingRecordSource->IsLapRecording()
+		? InTrainingRecordSource->GetCurrentSegments()
+		: InTrainingRecordSource->GetLastCompletedLap().Segments;
+	RefreshTrainingDisplay();
+	if (TrainingReadoutPanel)
+	{
+		TrainingReadoutPanel->SetVisibility(ESlateVisibility::HitTestInvisible);
+	}
+}
+
+void UDroneFlightHUDWidget::ClearTrainingRecordSource()
+{
+	SetTrainingRecordSource(nullptr);
+}
+
+void UDroneFlightHUDWidget::HandleTrainingLapStarted()
+{
+	DisplayedTrainingSegments.Reset();
+	RefreshTrainingDisplay();
+}
+
+void UDroneFlightHUDWidget::HandleTrainingSegmentRecorded(const FDroneTrainingSegmentRecord SegmentRecord)
+{
+	DisplayedTrainingSegments.Add(SegmentRecord);
+	RefreshTrainingDisplay();
+}
+
+void UDroneFlightHUDWidget::HandleTrainingLapCompleted(const FDroneTrainingLapRecord LapRecord)
+{
+	DisplayedTrainingSegments = LapRecord.Segments;
+	RefreshTrainingDisplay();
 }
 
 void UDroneFlightHUDWidget::BuildDefaultLayout()
@@ -143,7 +206,7 @@ void UDroneFlightHUDWidget::BuildDefaultLayout()
 	UTextBlock* HeaderText = WidgetTree->ConstructWidget<UTextBlock>(
 		UTextBlock::StaticClass(),
 		TEXT("FlightReadoutHeader"));
-	HeaderText->SetText(FText::FromString(TEXT("FLIGHT DATA")));
+	HeaderText->SetText(FText::FromString(TEXT("드론 비행 정보")));
 	HeaderText->SetColorAndOpacity(FSlateColor(FLinearColor(0.25f, 0.85f, 1.0f, 1.0f)));
 	HeaderText->SetFont(FCoreStyle::GetDefaultFontStyle(TEXT("Bold"), 16.0f));
 	UVerticalBoxSlot* HeaderSlot = ReadoutColumn->AddChildToVerticalBox(HeaderText);
@@ -196,8 +259,81 @@ bool UDroneFlightHUDWidget::TryBindBlueprintLayout()
 	}
 
 	bUsingNativeFallbackLayout = false;
+	if (UTextBlock* HeaderText = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("FlightReadoutHeader"))))
+	{
+		HeaderText->SetText(FText::FromString(TEXT("드론 비행 정보")));
+		HeaderText->SetFont(FCoreStyle::GetDefaultFontStyle(TEXT("Bold"), 16.0f));
+	}
+
+	// Designer WBP가 Roboto를 저장했더라도 한글 시스템 폴백을 사용할 수 있는
+	// Engine 기본 Composite Font로 런타임에 다시 고정한다.
+	const FSlateFontInfo ReadoutFont = FCoreStyle::GetDefaultFontStyle(TEXT("Regular"), 18.0f);
+	SpeedValueText->SetFont(ReadoutFont);
+	AltitudeValueText->SetFont(ReadoutFont);
+	VerticalSpeedValueText->SetFont(ReadoutFont);
+	HeadingValueText->SetFont(ReadoutFont);
 	PushCachedTextToWidgets();
 	return true;
+}
+
+void UDroneFlightHUDWidget::BuildTrainingLayout()
+{
+	if (!WidgetTree || TrainingReadoutPanel)
+	{
+		return;
+	}
+
+	UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(WidgetTree->RootWidget);
+	if (!RootCanvas)
+	{
+		UE_LOG(LogDrone, Warning, TEXT("Flight HUD '%s' needs a CanvasPanel root for the Training statistics panel."), *GetNameSafe(GetClass()));
+		return;
+	}
+
+	TrainingReadoutPanel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("TrainingReadoutPanel"));
+	TrainingReadoutPanel->SetBrushColor(FLinearColor(0.015f, 0.025f, 0.035f, 0.84f));
+	TrainingReadoutPanel->SetPadding(FMargin(14.0f, 10.0f));
+	TrainingReadoutPanel->SetVisibility(ESlateVisibility::Collapsed);
+
+	UCanvasPanelSlot* TrainingSlot = RootCanvas->AddChildToCanvas(TrainingReadoutPanel);
+	TrainingSlot->SetAnchors(FAnchors(0.0f, 1.0f));
+	TrainingSlot->SetAlignment(FVector2D(0.0f, 1.0f));
+	TrainingSlot->SetPosition(FVector2D(24.0f, -24.0f));
+	TrainingSlot->SetAutoSize(true);
+
+	UVerticalBox* TrainingColumn = WidgetTree->ConstructWidget<UVerticalBox>(
+		UVerticalBox::StaticClass(),
+		TEXT("TrainingReadoutColumn"));
+	TrainingReadoutPanel->SetContent(TrainingColumn);
+
+	UTextBlock* HeaderText = WidgetTree->ConstructWidget<UTextBlock>(
+		UTextBlock::StaticClass(),
+		TEXT("TrainingReadoutHeader"));
+	HeaderText->SetText(FText::FromString(TEXT("코스 구간 기록")));
+	HeaderText->SetColorAndOpacity(FSlateColor(FLinearColor(0.25f, 1.0f, 0.55f, 1.0f)));
+	HeaderText->SetFont(FCoreStyle::GetDefaultFontStyle(TEXT("Bold"), 16.0f));
+	UVerticalBoxSlot* HeaderSlot = TrainingColumn->AddChildToVerticalBox(HeaderText);
+	HeaderSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 6.0f));
+
+	auto AddTrainingText = [this, TrainingColumn](const FName WidgetName) -> UTextBlock*
+	{
+		UTextBlock* ValueText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), WidgetName);
+		ValueText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+		ValueText->SetFont(FCoreStyle::GetDefaultFontStyle(TEXT("Regular"), 16.0f));
+		ValueText->SetJustification(ETextJustify::Left);
+		UVerticalBoxSlot* ValueSlot = TrainingColumn->AddChildToVerticalBox(ValueText);
+		ValueSlot->SetPadding(FMargin(0.0f, 1.0f));
+		return ValueText;
+	};
+
+	TrainingStatusValueText = AddTrainingText(TEXT("TrainingStatusValueText"));
+	LastSegmentSpeedValueText = AddTrainingText(TEXT("LastSegmentSpeedValueText"));
+	LastSegmentDistanceValueText = AddTrainingText(TEXT("LastSegmentDistanceValueText"));
+	LastSegmentTimeValueText = AddTrainingText(TEXT("LastSegmentTimeValueText"));
+	AverageSegmentSpeedValueText = AddTrainingText(TEXT("AverageSegmentSpeedValueText"));
+	AverageSegmentDistanceValueText = AddTrainingText(TEXT("AverageSegmentDistanceValueText"));
+	AverageSegmentTimeValueText = AddTrainingText(TEXT("AverageSegmentTimeValueText"));
+	RefreshTrainingDisplay();
 }
 
 void UDroneFlightHUDWidget::ApplySnapshot(const FDroneTelemetrySnapshot& Snapshot)
@@ -205,19 +341,19 @@ void UDroneFlightHUDWidget::ApplySnapshot(const FDroneTelemetrySnapshot& Snapsho
 	// 단위 변환은 Telemetry에서 끝났으므로 여기서는 자릿수와 부호만 포맷한다.
 	DisplayedSnapshot = Snapshot;
 	SpeedDisplayText = FText::FromString(FString::Printf(
-		TEXT("SPD  %.1f km/h"),
+		TEXT("현재 속도  %.1f km/h"),
 		Snapshot.SpeedKilometersPerHour));
 	AltitudeDisplayText = FText::FromString(FString::Printf(
-		TEXT("ALT  %.1f m"),
+		TEXT("현재 고도  %.1f m"),
 		Snapshot.AltitudeMeters));
 	VerticalSpeedDisplayText = FText::FromString(FString::Printf(
-		TEXT("V/S  %+.1f m/s"),
+		TEXT("수직 속도  %+.1f m/s"),
 		Snapshot.VerticalSpeedMetersPerSecond));
 
 	// 359.6도처럼 반올림 결과가 360이 되면 000도 표시로 되돌린다.
 	const int32 RoundedHeading = FMath::RoundToInt(FRotator::ClampAxis(Snapshot.HeadingDegrees)) % 360;
 	HeadingDisplayText = FText::FromString(FString::Printf(
-		TEXT("HDG  %03d\u00B0"),
+		TEXT("진행 방향  %03d\u00B0"),
 		RoundedHeading));
 	PushCachedTextToWidgets();
 }
@@ -225,10 +361,10 @@ void UDroneFlightHUDWidget::ApplySnapshot(const FDroneTelemetrySnapshot& Snapsho
 void UDroneFlightHUDWidget::ApplyPlaceholderText()
 {
 	DisplayedSnapshot = FDroneTelemetrySnapshot();
-	SpeedDisplayText = FText::FromString(TEXT("SPD  --.- km/h"));
-	AltitudeDisplayText = FText::FromString(TEXT("ALT  --.- m"));
-	VerticalSpeedDisplayText = FText::FromString(TEXT("V/S  --.- m/s"));
-	HeadingDisplayText = FText::FromString(TEXT("HDG  ---\u00B0"));
+	SpeedDisplayText = FText::FromString(TEXT("현재 속도  --.- km/h"));
+	AltitudeDisplayText = FText::FromString(TEXT("현재 고도  --.- m"));
+	VerticalSpeedDisplayText = FText::FromString(TEXT("수직 속도  --.- m/s"));
+	HeadingDisplayText = FText::FromString(TEXT("진행 방향  ---\u00B0"));
 	PushCachedTextToWidgets();
 }
 
@@ -250,5 +386,122 @@ void UDroneFlightHUDWidget::PushCachedTextToWidgets()
 	if (HeadingValueText)
 	{
 		HeadingValueText->SetText(HeadingDisplayText);
+	}
+}
+
+void UDroneFlightHUDWidget::RefreshTrainingDisplay()
+{
+	const UDroneTrainingLapRecorderComponent* Source = TrainingRecordSource.Get();
+	if (!Source)
+	{
+		TrainingStatusDisplayText = FText::FromString(TEXT("코스 기록  없음"));
+		LastSegmentSpeedDisplayText = FText::FromString(TEXT("방금 구간 평균 속도  --.- km/h"));
+		LastSegmentDistanceDisplayText = FText::FromString(TEXT("방금 구간 이동 거리  --.- m"));
+		LastSegmentTimeDisplayText = FText::FromString(TEXT("방금 구간 통과 시간  --.--초"));
+		AverageSegmentSpeedDisplayText = FText::FromString(TEXT("완료 구간 평균 속도  --.- km/h"));
+		AverageSegmentDistanceDisplayText = FText::FromString(TEXT("완료 구간 평균 거리  --.- m"));
+		AverageSegmentTimeDisplayText = FText::FromString(TEXT("완료 구간 평균 시간  --.--초"));
+		PushCachedTrainingTextToWidgets();
+		return;
+	}
+
+	if (Source->IsLapRecording())
+	{
+		TrainingStatusDisplayText = FText::FromString(FString::Printf(
+			TEXT("코스 기록  측정 중 · 완료 %d구간"),
+			DisplayedTrainingSegments.Num()));
+	}
+	else if (Source->HasCompletedLap())
+	{
+		TrainingStatusDisplayText = FText::FromString(FString::Printf(
+			TEXT("코스 기록  최근 완주 · %d구간"),
+			DisplayedTrainingSegments.Num()));
+	}
+	else
+	{
+		TrainingStatusDisplayText = FText::FromString(TEXT("코스 기록  시작 게이트 대기"));
+	}
+
+	if (DisplayedTrainingSegments.IsEmpty())
+	{
+		LastSegmentSpeedDisplayText = FText::FromString(TEXT("방금 구간 평균 속도  --.- km/h"));
+		LastSegmentDistanceDisplayText = FText::FromString(TEXT("방금 구간 이동 거리  --.- m"));
+		LastSegmentTimeDisplayText = FText::FromString(TEXT("방금 구간 통과 시간  --.--초"));
+		AverageSegmentSpeedDisplayText = FText::FromString(TEXT("완료 구간 평균 속도  --.- km/h"));
+		AverageSegmentDistanceDisplayText = FText::FromString(TEXT("완료 구간 평균 거리  --.- m"));
+		AverageSegmentTimeDisplayText = FText::FromString(TEXT("완료 구간 평균 시간  --.--초"));
+		PushCachedTrainingTextToWidgets();
+		return;
+	}
+
+	const FDroneTrainingSegmentRecord& LastSegment = DisplayedTrainingSegments.Last();
+	LastSegmentSpeedDisplayText = FText::FromString(FString::Printf(
+		TEXT("방금 구간 평균 속도  %.1f km/h"),
+		LastSegment.AverageSpeedKilometersPerHour));
+	LastSegmentDistanceDisplayText = FText::FromString(FString::Printf(
+		TEXT("방금 구간 이동 거리  %.1f m"),
+		LastSegment.TravelDistanceMeters));
+	LastSegmentTimeDisplayText = FText::FromString(FString::Printf(
+		TEXT("방금 구간 통과 시간  %.2f초"),
+		LastSegment.ElapsedSeconds));
+
+	double SpeedSum = 0.0;
+	double DistanceSum = 0.0;
+	double TimeSum = 0.0;
+	for (const FDroneTrainingSegmentRecord& Segment : DisplayedTrainingSegments)
+	{
+		SpeedSum += FMath::IsFinite(Segment.AverageSpeedKilometersPerHour)
+			? Segment.AverageSpeedKilometersPerHour
+			: 0.0;
+		DistanceSum += FMath::IsFinite(Segment.TravelDistanceMeters)
+			? Segment.TravelDistanceMeters
+			: 0.0;
+		TimeSum += FMath::IsFinite(Segment.ElapsedSeconds)
+			? Segment.ElapsedSeconds
+			: 0.0;
+	}
+
+	const double SegmentCount = static_cast<double>(DisplayedTrainingSegments.Num());
+	AverageSegmentSpeedDisplayText = FText::FromString(FString::Printf(
+		TEXT("완료 구간 평균 속도  %.1f km/h"),
+		SpeedSum / SegmentCount));
+	AverageSegmentDistanceDisplayText = FText::FromString(FString::Printf(
+		TEXT("완료 구간 평균 거리  %.1f m"),
+		DistanceSum / SegmentCount));
+	AverageSegmentTimeDisplayText = FText::FromString(FString::Printf(
+		TEXT("완료 구간 평균 시간  %.2f초"),
+		TimeSum / SegmentCount));
+	PushCachedTrainingTextToWidgets();
+}
+
+void UDroneFlightHUDWidget::PushCachedTrainingTextToWidgets()
+{
+	if (TrainingStatusValueText)
+	{
+		TrainingStatusValueText->SetText(TrainingStatusDisplayText);
+	}
+	if (LastSegmentSpeedValueText)
+	{
+		LastSegmentSpeedValueText->SetText(LastSegmentSpeedDisplayText);
+	}
+	if (LastSegmentDistanceValueText)
+	{
+		LastSegmentDistanceValueText->SetText(LastSegmentDistanceDisplayText);
+	}
+	if (LastSegmentTimeValueText)
+	{
+		LastSegmentTimeValueText->SetText(LastSegmentTimeDisplayText);
+	}
+	if (AverageSegmentSpeedValueText)
+	{
+		AverageSegmentSpeedValueText->SetText(AverageSegmentSpeedDisplayText);
+	}
+	if (AverageSegmentDistanceValueText)
+	{
+		AverageSegmentDistanceValueText->SetText(AverageSegmentDistanceDisplayText);
+	}
+	if (AverageSegmentTimeValueText)
+	{
+		AverageSegmentTimeValueText->SetText(AverageSegmentTimeDisplayText);
 	}
 }

@@ -58,4 +58,7 @@ private:
 
 	/** 특정 Pawn 타입 대신 Telemetry Component 유무만 보고 HUD Source를 바꾼다. */
 	void SyncFlightHUDToPawn(APawn* NewPawn);
+
+	/** 현재 World의 Tutorial Course가 있으면 같은 HUD에 구간 기록 Source를 한 번 연결한다. */
+	void SyncTrainingHUDToWorld();
 };

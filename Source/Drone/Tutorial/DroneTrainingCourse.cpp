@@ -115,6 +115,21 @@ void ADroneTrainingCourse::ConfigureOrderedGates(const TArray<ADroneTrainingGate
 	ConfigureGateSequence();
 }
 
+void ADroneTrainingCourse::SynchronizeGateDefinitions()
+{
+	for (int32 GatePosition = 0; GatePosition < OrderedGates.Num(); ++GatePosition)
+	{
+		ADroneTrainingGate* Gate = OrderedGates[GatePosition];
+		if (IsValid(Gate))
+		{
+			// 배열만 정확히 구성하면 CourseId/GateIndex의 이중 수동 입력이 필요하지 않다.
+			Gate->ConfigureGateDefinition(CourseId, GatePosition, Gate->GetSegmentDistance());
+		}
+	}
+
+	ConfigureGateSequence();
+}
+
 int32 ADroneTrainingCourse::GetCourseLineSegmentCount() const
 {
 	TInlineComponentArray<USplineMeshComponent*> SplineMeshComponents;
@@ -131,6 +146,24 @@ int32 ADroneTrainingCourse::GetCourseLineSegmentCount() const
 	}
 
 	return GeneratedSegmentCount;
+}
+
+int32 ADroneTrainingCourse::GetExpectedCourseLineSegmentCount() const
+{
+	if (!CourseSpline || CourseSpline->GetNumberOfSplinePoints() < 2)
+	{
+		return 0;
+	}
+
+	const float SplineLength = CourseSpline->GetSplineLength();
+	if (!FMath::IsFinite(SplineLength) || SplineLength <= UE_SMALL_NUMBER)
+	{
+		return 0;
+	}
+
+	const float TargetSegmentLength = FMath::Max(CourseLineSegmentLengthCentimeters, 25.0f);
+	const int32 RequestedSegmentCount = FMath::Max(1, FMath::CeilToInt(SplineLength / TargetSegmentLength));
+	return FMath::Min(RequestedSegmentCount, DroneTrainingCourse::MaximumGeneratedSegmentCount);
 }
 
 FName ADroneTrainingCourse::GetGeneratedSegmentTag()
@@ -169,6 +202,16 @@ void ADroneTrainingCourse::ConfigureGateSequence()
 {
 	if (GateSequenceComponent)
 	{
+		// OrderedGates 배열 하나만 순서의 원본으로 사용한다. Editor에서 Gate를 복제한 뒤
+		// GateIndex를 모두 0으로 남기는 흔한 실수도 Construction/Play 때 자동 복구한다.
+		for (int32 GatePosition = 0; GatePosition < OrderedGates.Num(); ++GatePosition)
+		{
+			ADroneTrainingGate* Gate = OrderedGates[GatePosition];
+			if (IsValid(Gate))
+			{
+				Gate->ConfigureGateDefinition(CourseId, GatePosition, Gate->GetSegmentDistance());
+			}
+		}
 		GateSequenceComponent->ConfigureSequence(CourseId, OrderedGates);
 	}
 }
@@ -195,14 +238,15 @@ void ADroneTrainingCourse::RebuildCourseLineSegments()
 		return;
 	}
 
-	// 열린 Spline은 점 N개 사이에 N-1개의 표시 Segment가 필요하다.
-	const int32 SplinePointCount = CourseSpline->GetNumberOfSplinePoints();
-	const int32 RequestedSegmentCount = FMath::Max(0, SplinePointCount - 1);
-	const int32 SegmentCount = FMath::Min(RequestedSegmentCount, DroneTrainingCourse::MaximumGeneratedSegmentCount);
+	// 제어점 한 쌍에 긴 Cube 하나를 늘이면 곡률이 큰 곳이 각져 보인다. 전체 길이를
+	// 일정 간격으로 다시 표본화해 짧은 SplineMesh 여러 개가 같은 곡선을 잇게 한다.
+	const int32 SegmentCount = GetExpectedCourseLineSegmentCount();
 	if (SegmentCount == 0)
 	{
 		return;
 	}
+	const float SplineLength = CourseSpline->GetSplineLength();
+	const float SegmentArcLength = SplineLength / static_cast<float>(SegmentCount);
 
 	UMaterialInterface* MaterialToUse = CreateCourseLineMaterial();
 	const FVector MeshSize = CourseLineMesh->GetBounds().BoxExtent * 2.0f;
@@ -237,6 +281,7 @@ void ADroneTrainingCourse::RebuildCourseLineSegments()
 		CourseLineSegment->SetSplineUpDir(FVector::UpVector, false);
 		CourseLineSegment->SetStartScale(CourseLineScale, false);
 		CourseLineSegment->SetEndScale(CourseLineScale, false);
+		CourseLineSegment->bSmoothInterpRollScale = true;
 
 		// 표시선은 비행 판정 대상이 아니다. 네 항목을 Segment마다 강제로 고정한다.
 		CourseLineSegment->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
@@ -255,21 +300,23 @@ void ADroneTrainingCourse::RebuildCourseLineSegments()
 			CourseLineSegment->SetMaterial(0, MaterialToUse);
 		}
 
-		FVector StartPosition;
-		FVector StartTangent;
-		CourseSpline->GetLocationAndTangentAtSplinePoint(
-			SegmentIndex,
-			StartPosition,
-			StartTangent,
+		const float StartDistance = SegmentArcLength * static_cast<float>(SegmentIndex);
+		const float EndDistance = SegmentIndex + 1 == SegmentCount
+			? SplineLength
+			: SegmentArcLength * static_cast<float>(SegmentIndex + 1);
+		const float TangentLength = FMath::Max(EndDistance - StartDistance, 1.0f);
+		const FVector StartPosition = CourseSpline->GetLocationAtDistanceAlongSpline(
+			StartDistance,
 			ESplineCoordinateSpace::Local);
-
-		FVector EndPosition;
-		FVector EndTangent;
-		CourseSpline->GetLocationAndTangentAtSplinePoint(
-			SegmentIndex + 1,
-			EndPosition,
-			EndTangent,
+		const FVector EndPosition = CourseSpline->GetLocationAtDistanceAlongSpline(
+			EndDistance,
 			ESplineCoordinateSpace::Local);
+		const FVector StartTangent = CourseSpline->GetDirectionAtDistanceAlongSpline(
+			StartDistance,
+			ESplineCoordinateSpace::Local) * TangentLength;
+		const FVector EndTangent = CourseSpline->GetDirectionAtDistanceAlongSpline(
+			EndDistance,
+			ESplineCoordinateSpace::Local) * TangentLength;
 
 		const FVector VerticalOffset(0.0f, 0.0f, CourseLineVerticalOffsetCentimeters);
 		CourseLineSegment->SetStartAndEnd(

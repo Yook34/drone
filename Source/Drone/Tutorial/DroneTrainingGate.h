@@ -116,11 +116,12 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Tutorial|Gate|Components", meta=(AllowPrivateAccess="true"))
 	TArray<TObjectPtr<UStaticMeshComponent>> RingVisualSegments;
 
-	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category="Tutorial|Gate|Definition", meta=(AllowPrivateAccess="true"))
+	/** Course의 OrderedGates 배열에서 자동으로 동기화되며 직접 편집하지 않는다. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category="Tutorial|Gate|Definition", meta=(AllowPrivateAccess="true"))
 	FName CourseId = TEXT("DroneTrainingCourse");
 
-	/** Course의 OrderedGates 배열 위치와 반드시 같아야 한다. */
-	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category="Tutorial|Gate|Definition", meta=(ClampMin="0", AllowPrivateAccess="true"))
+	/** Course의 OrderedGates 배열 위치에서 자동으로 정해진다. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category="Tutorial|Gate|Definition", meta=(ClampMin="0", AllowPrivateAccess="true"))
 	int32 GateIndex = 0;
 
 	/** 후속 Segment 기록용 메타데이터. TUT-02 판정에는 사용하지 않는다. */

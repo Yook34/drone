@@ -3,9 +3,12 @@
 #include "Blueprint/UserWidget.h"
 #include "CoreMinimal.h"
 #include "Telemetry/DroneTelemetryTypes.h"
+#include "Tutorial/DroneTrainingRecordTypes.h"
 #include "DroneFlightHUDWidget.generated.h"
 
+class UBorder;
 class UDroneTelemetryComponent;
+class UDroneTrainingLapRecorderComponent;
 class UTextBlock;
 
 /**
@@ -55,6 +58,34 @@ public:
 	UFUNCTION(BlueprintPure, Category="Drone|HUD")
 	FText GetHeadingDisplayText() const { return HeadingDisplayText; }
 
+	/** Tutorial Course의 구간 기록 Event를 연결해 Tick 없이 결과 패널을 갱신한다. */
+	UFUNCTION(BlueprintCallable, Category="Drone|HUD|Training")
+	void SetTrainingRecordSource(UDroneTrainingLapRecorderComponent* InTrainingRecordSource);
+
+	UFUNCTION(BlueprintCallable, Category="Drone|HUD|Training")
+	void ClearTrainingRecordSource();
+
+	UFUNCTION(BlueprintPure, Category="Drone|HUD|Training")
+	UDroneTrainingLapRecorderComponent* GetTrainingRecordSource() const { return TrainingRecordSource.Get(); }
+
+	UFUNCTION(BlueprintPure, Category="Drone|HUD|Training")
+	FText GetLastSegmentSpeedDisplayText() const { return LastSegmentSpeedDisplayText; }
+
+	UFUNCTION(BlueprintPure, Category="Drone|HUD|Training")
+	FText GetLastSegmentDistanceDisplayText() const { return LastSegmentDistanceDisplayText; }
+
+	UFUNCTION(BlueprintPure, Category="Drone|HUD|Training")
+	FText GetLastSegmentTimeDisplayText() const { return LastSegmentTimeDisplayText; }
+
+	UFUNCTION(BlueprintPure, Category="Drone|HUD|Training")
+	FText GetAverageSegmentSpeedDisplayText() const { return AverageSegmentSpeedDisplayText; }
+
+	UFUNCTION(BlueprintPure, Category="Drone|HUD|Training")
+	FText GetAverageSegmentDistanceDisplayText() const { return AverageSegmentDistanceDisplayText; }
+
+	UFUNCTION(BlueprintPure, Category="Drone|HUD|Training")
+	FText GetAverageSegmentTimeDisplayText() const { return AverageSegmentTimeDisplayText; }
+
 	/** true면 WBP Designer 대신 C++ 기본 레이아웃을 사용하고 있다는 뜻이다. */
 	UFUNCTION(BlueprintPure, Category="Drone|HUD")
 	bool IsUsingNativeFallbackLayout() const { return bUsingNativeFallbackLayout; }
@@ -71,11 +102,23 @@ private:
 	UFUNCTION()
 	void HandleTelemetryUpdated(FDroneTelemetrySnapshot Snapshot);
 
+	UFUNCTION()
+	void HandleTrainingLapStarted();
+
+	UFUNCTION()
+	void HandleTrainingSegmentRecorded(FDroneTrainingSegmentRecord SegmentRecord);
+
+	UFUNCTION()
+	void HandleTrainingLapCompleted(FDroneTrainingLapRecord LapRecord);
+
 	/** WBP TextBlock 계약을 먼저 확인하고, 없으면 실행 가능한 C++ 기본 UI를 만든다. */
 	void BuildDefaultLayout();
 
 	/** WBP Designer의 정확한 이름을 가진 TextBlock 4개를 찾는다. */
 	bool TryBindBlueprintLayout();
+
+	/** Designer HUD의 왼쪽 아래에 한국어 Tutorial 구간 기록 패널을 동적으로 붙인다. */
+	void BuildTrainingLayout();
 
 	/** Snapshot 값 자체를 다시 계산하지 않고 표시 문자열만 만든다. */
 	void ApplySnapshot(const FDroneTelemetrySnapshot& Snapshot);
@@ -86,8 +129,15 @@ private:
 	/** 캐시된 Text를 현재 WBP 또는 native TextBlock에 한 번씩 밀어 넣는다. */
 	void PushCachedTextToWidgets();
 
+	/** 마지막 구간과 현재 Lap의 완료 구간 평균을 사람이 읽는 한국어 Text로 만든다. */
+	void RefreshTrainingDisplay();
+
+	void PushCachedTrainingTextToWidgets();
+
 	/** Pawn이 파괴돼도 강한 참조로 수명을 늘리지 않도록 Weak Pointer를 사용한다. */
 	TWeakObjectPtr<UDroneTelemetryComponent> TelemetrySource;
+
+	TWeakObjectPtr<UDroneTrainingLapRecorderComponent> TrainingRecordSource;
 
 	/** 테스트와 Blueprint 디버깅에서 마지막으로 받은 원본 Snapshot을 확인한다. */
 	UPROPERTY(Transient)
@@ -105,6 +155,30 @@ private:
 	UPROPERTY(Transient)
 	FText HeadingDisplayText;
 
+	UPROPERTY(Transient)
+	TArray<FDroneTrainingSegmentRecord> DisplayedTrainingSegments;
+
+	UPROPERTY(Transient)
+	FText TrainingStatusDisplayText;
+
+	UPROPERTY(Transient)
+	FText LastSegmentSpeedDisplayText;
+
+	UPROPERTY(Transient)
+	FText LastSegmentDistanceDisplayText;
+
+	UPROPERTY(Transient)
+	FText LastSegmentTimeDisplayText;
+
+	UPROPERTY(Transient)
+	FText AverageSegmentSpeedDisplayText;
+
+	UPROPERTY(Transient)
+	FText AverageSegmentDistanceDisplayText;
+
+	UPROPERTY(Transient)
+	FText AverageSegmentTimeDisplayText;
+
 	/**
 	 * 아래 네 이름은 C++ ↔ WBP Designer 계약이다.
 	 * BindWidget은 위젯을 생성하지 않는다. WBP Designer에 같은 이름·타입이 있어야
@@ -121,6 +195,30 @@ private:
 
 	UPROPERTY(Transient, meta=(BindWidget))
 	TObjectPtr<UTextBlock> HeadingValueText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> TrainingReadoutPanel;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> TrainingStatusValueText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> LastSegmentSpeedValueText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> LastSegmentDistanceValueText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> LastSegmentTimeValueText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> AverageSegmentSpeedValueText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> AverageSegmentDistanceValueText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> AverageSegmentTimeValueText;
 
 	UPROPERTY(Transient)
 	bool bUsingNativeFallbackLayout = false;

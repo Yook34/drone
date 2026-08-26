@@ -2,8 +2,11 @@
 
 #include "Blueprint/UserWidget.h"
 #include "Drone.h"
+#include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
 #include "Telemetry/DroneTelemetryComponent.h"
+#include "Tutorial/DroneTrainingCourse.h"
+#include "Tutorial/DroneTrainingLapRecorderComponent.h"
 #include "UI/DroneFlightHUDWidget.h"
 
 ADronePrototypePlayerController::ADronePrototypePlayerController()
@@ -28,6 +31,7 @@ void ADronePrototypePlayerController::BeginPlay()
 	CreateFlightHUD();
 	// BeginPlay 전에 GameMode가 Pawn을 이미 Possess했을 수 있어 현재 Pawn도 즉시 연결한다.
 	SyncFlightHUDToPawn(GetPawn());
+	SyncTrainingHUDToWorld();
 }
 
 void ADronePrototypePlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -39,6 +43,7 @@ void ADronePrototypePlayerController::EndPlay(const EEndPlayReason::Type EndPlay
 
 	if (FlightHUDWidget)
 	{
+		FlightHUDWidget->ClearTrainingRecordSource();
 		FlightHUDWidget->ClearTelemetrySource();
 		FlightHUDWidget->RemoveFromParent();
 		FlightHUDWidget = nullptr;
@@ -88,4 +93,28 @@ void ADronePrototypePlayerController::SyncFlightHUDToPawn(APawn* NewPawn)
 		? NewPawn->FindComponentByClass<UDroneTelemetryComponent>()
 		: nullptr;
 	FlightHUDWidget->SetTelemetrySource(Telemetry);
+}
+
+void ADronePrototypePlayerController::SyncTrainingHUDToWorld()
+{
+	if (!FlightHUDWidget)
+	{
+		return;
+	}
+
+	UDroneTrainingLapRecorderComponent* Recorder = nullptr;
+	if (UWorld* World = GetWorld())
+	{
+		for (TActorIterator<ADroneTrainingCourse> CourseIt(World); CourseIt; ++CourseIt)
+		{
+			ADroneTrainingCourse* Course = *CourseIt;
+			if (IsValid(Course))
+			{
+				Recorder = Course->GetLapRecorderComponent();
+				break;
+			}
+		}
+	}
+
+	FlightHUDWidget->SetTrainingRecordSource(Recorder);
 }

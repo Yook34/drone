@@ -318,17 +318,17 @@ bool FDroneTrainingGateSequenceTest::RunTest(const FString& Parameters)
 		Sequence->TryAcceptTraversal(Gates[0], Drone, ForwardEntry(Gates[0]), ForwardExit(Gates[0])),
 		EDroneTrainingGatePassResult::InvalidConfiguration);
 
-	Gates[1]->ConfigureGateDefinition(TEXT("OtherCourse"), 1, 1000.0f);
+	Gates[1]->ConfigureGateDefinition(TEXT("OtherCourse"), 7, 1000.0f);
 	Course->ConfigureOrderedGates(Gates);
-	TestFalse(TEXT("CourseId mismatch invalidates the sequence"), Sequence->IsConfigurationValid());
+	TestTrue(TEXT("Course array automatically repairs Gate metadata"), Sequence->IsConfigurationValid());
+	TestEqual(TEXT("Automatic repair restores CourseId"), Gates[1]->GetCourseId(), Course->GetCourseId());
+	TestEqual(TEXT("Automatic repair restores GateIndex"), Gates[1]->GetGateIndex(), 1);
 
-	Gates[1]->ConfigureGateDefinition(Course->GetCourseId(), 7, 1000.0f);
-	Course->ConfigureOrderedGates(Gates);
-	TestFalse(TEXT("GateIndex mismatch invalidates the sequence"), Sequence->IsConfigurationValid());
-
-	Gates[1]->ConfigureGateDefinition(Course->GetCourseId(), 1, 1000.0f);
-	Course->ConfigureOrderedGates(Gates);
-	TestTrue(TEXT("Restoring the valid explicit list recovers the sequence"), Sequence->IsConfigurationValid());
+	// 구성 뒤 외부에서 Gate 정의가 변조되면 기존 Sequence는 즉시 무효가 된다.
+	Gates[1]->ConfigureGateDefinition(TEXT("OtherCourse"), 7, 1000.0f);
+	TestFalse(TEXT("Post-configuration Gate metadata tampering invalidates the sequence"), Sequence->IsConfigurationValid());
+	Course->SynchronizeGateDefinitions();
+	TestTrue(TEXT("Explicit synchronization recovers the sequence"), Sequence->IsConfigurationValid());
 
 	// Current Gate가 먼저 파괴되면 외부 조회에서도 즉시 Invalid로 보이고 current가 사라진다.
 	ADroneTrainingCourse* GateFirstCourse = TestWorld->SpawnActor<ADroneTrainingCourse>(
