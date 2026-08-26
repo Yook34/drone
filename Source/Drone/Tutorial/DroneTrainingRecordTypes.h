@@ -64,6 +64,90 @@ struct FDroneTrainingLapRecord
 	TArray<FDroneTrainingSegmentRecord> Segments;
 };
 
+/** 현재 구간을 같은 위치의 이전 성공 구간들과 비교한 TUT-04 결과다. */
+USTRUCT(BlueprintType)
+struct FDroneTrainingSegmentComparison
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category="Tutorial|Comparison")
+	FDroneTrainingSegmentRecord CurrentSegment;
+
+	/** 현재 시도를 제외하고 비교 계산에 사용한 이전 정상 구간 수다. */
+	UPROPERTY(BlueprintReadOnly, Category="Tutorial|Comparison")
+	int32 PreviousRecordCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category="Tutorial|Comparison")
+	bool bHasPreviousBaseline = false;
+
+	UPROPERTY(BlueprintReadOnly, Category="Tutorial|Comparison", meta=(Units="s"))
+	double PreviousAverageElapsedSeconds = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category="Tutorial|Comparison", meta=(Units="km/h"))
+	double PreviousAverageSpeedKilometersPerHour = 0.0;
+
+	/** 현재 구간을 포함한 최단 시간이다. 첫 정상 기록도 Best로 시작한다. */
+	UPROPERTY(BlueprintReadOnly, Category="Tutorial|Comparison", meta=(Units="s"))
+	double BestElapsedSeconds = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category="Tutorial|Comparison", meta=(Units="km/h"))
+	double BestAverageSpeedKilometersPerHour = 0.0;
+
+	/** Current - PreviousAverage. 음수면 이전 평균보다 빠르다. */
+	UPROPERTY(BlueprintReadOnly, Category="Tutorial|Comparison", meta=(Units="s"))
+	double ElapsedDeltaFromPreviousAverageSeconds = 0.0;
+
+	/** Current - PreviousAverage. 양수면 이전 평균보다 평균 속도가 높다. */
+	UPROPERTY(BlueprintReadOnly, Category="Tutorial|Comparison", meta=(Units="km/h"))
+	double SpeedDeltaFromPreviousAverageKilometersPerHour = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category="Tutorial|Comparison")
+	bool bIsNewBestTime = false;
+};
+
+/** 한 Lap 완료 직후 생성되는 이전 평균·Best·Delta의 불변 결과다. */
+USTRUCT(BlueprintType)
+struct FDroneTrainingLapComparison
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category="Tutorial|Comparison")
+	FDroneTrainingLapRecord CurrentLap;
+
+	/** 현재 Lap을 제외하고 비교 계산에 사용한 이전 정상 Lap 수다. */
+	UPROPERTY(BlueprintReadOnly, Category="Tutorial|Comparison")
+	int32 PreviousLapCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category="Tutorial|Comparison")
+	bool bHasPreviousBaseline = false;
+
+	UPROPERTY(BlueprintReadOnly, Category="Tutorial|Comparison", meta=(Units="s"))
+	double PreviousAverageElapsedSeconds = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category="Tutorial|Comparison", meta=(Units="km/h"))
+	double PreviousAverageSpeedKilometersPerHour = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category="Tutorial|Comparison", meta=(Units="s"))
+	double BestElapsedSeconds = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category="Tutorial|Comparison", meta=(Units="km/h"))
+	double BestAverageSpeedKilometersPerHour = 0.0;
+
+	/** Current - PreviousAverage. 음수면 이전 평균보다 빠르다. */
+	UPROPERTY(BlueprintReadOnly, Category="Tutorial|Comparison", meta=(Units="s"))
+	double ElapsedDeltaFromPreviousAverageSeconds = 0.0;
+
+	/** Current - PreviousAverage. 양수면 이전 평균보다 평균 속도가 높다. */
+	UPROPERTY(BlueprintReadOnly, Category="Tutorial|Comparison", meta=(Units="km/h"))
+	double SpeedDeltaFromPreviousAverageKilometersPerHour = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category="Tutorial|Comparison")
+	bool bIsNewBestTime = false;
+
+	UPROPERTY(BlueprintReadOnly, Category="Tutorial|Comparison")
+	TArray<FDroneTrainingSegmentComparison> SegmentComparisons;
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FDroneTrainingLapStartedSignature);
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
@@ -73,3 +157,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	FDroneTrainingLapCompletedSignature,
 	FDroneTrainingLapRecord, LapRecord);
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FDroneTrainingLapComparisonReadySignature,
+	FDroneTrainingLapComparison, Comparison);

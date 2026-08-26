@@ -103,10 +103,14 @@ void UDroneFlightHUDWidget::SetTrainingRecordSource(
 		CurrentSource->OnLapStarted.RemoveDynamic(this, &UDroneFlightHUDWidget::HandleTrainingLapStarted);
 		CurrentSource->OnSegmentRecorded.RemoveDynamic(this, &UDroneFlightHUDWidget::HandleTrainingSegmentRecorded);
 		CurrentSource->OnLapCompleted.RemoveDynamic(this, &UDroneFlightHUDWidget::HandleTrainingLapCompleted);
+		CurrentSource->OnLapComparisonReady.RemoveDynamic(
+			this,
+			&UDroneFlightHUDWidget::HandleTrainingLapComparisonReady);
 	}
 
 	TrainingRecordSource = InTrainingRecordSource;
 	DisplayedTrainingSegments.Reset();
+	DisplayedLapComparison = FDroneTrainingLapComparison();
 	if (!InTrainingRecordSource)
 	{
 		RefreshTrainingDisplay();
@@ -120,10 +124,14 @@ void UDroneFlightHUDWidget::SetTrainingRecordSource(
 	InTrainingRecordSource->OnLapStarted.AddUniqueDynamic(this, &UDroneFlightHUDWidget::HandleTrainingLapStarted);
 	InTrainingRecordSource->OnSegmentRecorded.AddUniqueDynamic(this, &UDroneFlightHUDWidget::HandleTrainingSegmentRecorded);
 	InTrainingRecordSource->OnLapCompleted.AddUniqueDynamic(this, &UDroneFlightHUDWidget::HandleTrainingLapCompleted);
+	InTrainingRecordSource->OnLapComparisonReady.AddUniqueDynamic(
+		this,
+		&UDroneFlightHUDWidget::HandleTrainingLapComparisonReady);
 
 	DisplayedTrainingSegments = InTrainingRecordSource->IsLapRecording()
 		? InTrainingRecordSource->GetCurrentSegments()
 		: InTrainingRecordSource->GetLastCompletedLap().Segments;
+	DisplayedLapComparison = InTrainingRecordSource->GetLastCompletedComparison();
 	RefreshTrainingDisplay();
 	if (TrainingReadoutPanel)
 	{
@@ -139,6 +147,7 @@ void UDroneFlightHUDWidget::ClearTrainingRecordSource()
 void UDroneFlightHUDWidget::HandleTrainingLapStarted()
 {
 	DisplayedTrainingSegments.Reset();
+	DisplayedLapComparison = FDroneTrainingLapComparison();
 	RefreshTrainingDisplay();
 }
 
@@ -151,6 +160,13 @@ void UDroneFlightHUDWidget::HandleTrainingSegmentRecorded(const FDroneTrainingSe
 void UDroneFlightHUDWidget::HandleTrainingLapCompleted(const FDroneTrainingLapRecord LapRecord)
 {
 	DisplayedTrainingSegments = LapRecord.Segments;
+	RefreshTrainingDisplay();
+}
+
+void UDroneFlightHUDWidget::HandleTrainingLapComparisonReady(
+	const FDroneTrainingLapComparison Comparison)
+{
+	DisplayedLapComparison = Comparison;
 	RefreshTrainingDisplay();
 }
 
@@ -333,6 +349,10 @@ void UDroneFlightHUDWidget::BuildTrainingLayout()
 	AverageSegmentSpeedValueText = AddTrainingText(TEXT("AverageSegmentSpeedValueText"));
 	AverageSegmentDistanceValueText = AddTrainingText(TEXT("AverageSegmentDistanceValueText"));
 	AverageSegmentTimeValueText = AddTrainingText(TEXT("AverageSegmentTimeValueText"));
+	PreviousLapAverageTimeValueText = AddTrainingText(TEXT("PreviousLapAverageTimeValueText"));
+	BestLapTimeValueText = AddTrainingText(TEXT("BestLapTimeValueText"));
+	LapTimeDeltaValueText = AddTrainingText(TEXT("LapTimeDeltaValueText"));
+	LapSpeedDeltaValueText = AddTrainingText(TEXT("LapSpeedDeltaValueText"));
 	RefreshTrainingDisplay();
 }
 
@@ -392,6 +412,7 @@ void UDroneFlightHUDWidget::PushCachedTextToWidgets()
 void UDroneFlightHUDWidget::RefreshTrainingDisplay()
 {
 	const UDroneTrainingLapRecorderComponent* Source = TrainingRecordSource.Get();
+	RefreshLapComparisonDisplay();
 	if (!Source)
 	{
 		TrainingStatusDisplayText = FText::FromString(TEXT("코스 기록  없음"));
@@ -474,6 +495,58 @@ void UDroneFlightHUDWidget::RefreshTrainingDisplay()
 	PushCachedTrainingTextToWidgets();
 }
 
+void UDroneFlightHUDWidget::RefreshLapComparisonDisplay()
+{
+	const UDroneTrainingLapRecorderComponent* Source = TrainingRecordSource.Get();
+	const FDroneTrainingLapComparison& Comparison = DisplayedLapComparison;
+	if (!Source || !Comparison.CurrentLap.bCompleted)
+	{
+		PreviousLapAverageTimeDisplayText = FText::FromString(TEXT("이전 완주 평균  --.--초"));
+		BestLapTimeDisplayText = FText::FromString(TEXT("최고 완주 기록  --.--초"));
+		LapTimeDeltaDisplayText = FText::FromString(Source && Source->IsLapRecording()
+			? TEXT("비교 결과  새 기록 측정 중")
+			: TEXT("비교 결과  완주 후 생성"));
+		LapSpeedDeltaDisplayText = FText::FromString(TEXT("속도 평균 대비  --.- km/h"));
+		return;
+	}
+
+	BestLapTimeDisplayText = FText::FromString(Comparison.bIsNewBestTime
+		? FString::Printf(
+			TEXT("최고 완주 기록  %.2f초 · 신기록"),
+			Comparison.BestElapsedSeconds)
+		: FString::Printf(
+			TEXT("최고 완주 기록  %.2f초"),
+			Comparison.BestElapsedSeconds));
+
+	if (!Comparison.bHasPreviousBaseline)
+	{
+		PreviousLapAverageTimeDisplayText = FText::FromString(TEXT("이전 완주 평균  없음"));
+		LapTimeDeltaDisplayText = FText::FromString(TEXT("비교 결과  기준 기록 생성"));
+		LapSpeedDeltaDisplayText = FText::FromString(TEXT("속도 평균 대비  기준 기록"));
+		return;
+	}
+
+	PreviousLapAverageTimeDisplayText = FText::FromString(FString::Printf(
+		TEXT("이전 완주 평균  %.2f초"),
+		Comparison.PreviousAverageElapsedSeconds));
+
+	const double TimeDelta = Comparison.ElapsedDeltaFromPreviousAverageSeconds;
+	if (FMath::IsNearlyZero(TimeDelta, 0.005))
+	{
+		LapTimeDeltaDisplayText = FText::FromString(TEXT("평균 대비  ±0.00초 동일"));
+	}
+	else
+	{
+		LapTimeDeltaDisplayText = FText::FromString(TimeDelta < 0.0
+			? FString::Printf(TEXT("평균 대비  %+.2f초 빠름"), TimeDelta)
+			: FString::Printf(TEXT("평균 대비  %+.2f초 느림"), TimeDelta));
+	}
+
+	LapSpeedDeltaDisplayText = FText::FromString(FString::Printf(
+		TEXT("속도 평균 대비  %+.1f km/h"),
+		Comparison.SpeedDeltaFromPreviousAverageKilometersPerHour));
+}
+
 void UDroneFlightHUDWidget::PushCachedTrainingTextToWidgets()
 {
 	if (TrainingStatusValueText)
@@ -503,5 +576,21 @@ void UDroneFlightHUDWidget::PushCachedTrainingTextToWidgets()
 	if (AverageSegmentTimeValueText)
 	{
 		AverageSegmentTimeValueText->SetText(AverageSegmentTimeDisplayText);
+	}
+	if (PreviousLapAverageTimeValueText)
+	{
+		PreviousLapAverageTimeValueText->SetText(PreviousLapAverageTimeDisplayText);
+	}
+	if (BestLapTimeValueText)
+	{
+		BestLapTimeValueText->SetText(BestLapTimeDisplayText);
+	}
+	if (LapTimeDeltaValueText)
+	{
+		LapTimeDeltaValueText->SetText(LapTimeDeltaDisplayText);
+	}
+	if (LapSpeedDeltaValueText)
+	{
+		LapSpeedDeltaValueText->SetText(LapSpeedDeltaDisplayText);
 	}
 }

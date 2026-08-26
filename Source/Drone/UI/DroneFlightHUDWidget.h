@@ -86,6 +86,18 @@ public:
 	UFUNCTION(BlueprintPure, Category="Drone|HUD|Training")
 	FText GetAverageSegmentTimeDisplayText() const { return AverageSegmentTimeDisplayText; }
 
+	UFUNCTION(BlueprintPure, Category="Drone|HUD|Training")
+	FText GetPreviousLapAverageTimeDisplayText() const { return PreviousLapAverageTimeDisplayText; }
+
+	UFUNCTION(BlueprintPure, Category="Drone|HUD|Training")
+	FText GetBestLapTimeDisplayText() const { return BestLapTimeDisplayText; }
+
+	UFUNCTION(BlueprintPure, Category="Drone|HUD|Training")
+	FText GetLapTimeDeltaDisplayText() const { return LapTimeDeltaDisplayText; }
+
+	UFUNCTION(BlueprintPure, Category="Drone|HUD|Training")
+	FText GetLapSpeedDeltaDisplayText() const { return LapSpeedDeltaDisplayText; }
+
 	/** true면 WBP Designer 대신 C++ 기본 레이아웃을 사용하고 있다는 뜻이다. */
 	UFUNCTION(BlueprintPure, Category="Drone|HUD")
 	bool IsUsingNativeFallbackLayout() const { return bUsingNativeFallbackLayout; }
@@ -111,6 +123,9 @@ private:
 	UFUNCTION()
 	void HandleTrainingLapCompleted(FDroneTrainingLapRecord LapRecord);
 
+	UFUNCTION()
+	void HandleTrainingLapComparisonReady(FDroneTrainingLapComparison Comparison);
+
 	/** WBP TextBlock 계약을 먼저 확인하고, 없으면 실행 가능한 C++ 기본 UI를 만든다. */
 	void BuildDefaultLayout();
 
@@ -131,6 +146,9 @@ private:
 
 	/** 마지막 구간과 현재 Lap의 완료 구간 평균을 사람이 읽는 한국어 Text로 만든다. */
 	void RefreshTrainingDisplay();
+
+	/** TUT-04의 첫 기준·이전 평균·Best·Delta를 별도 결과 행으로 포맷한다. */
+	void RefreshLapComparisonDisplay();
 
 	void PushCachedTrainingTextToWidgets();
 
@@ -159,6 +177,9 @@ private:
 	TArray<FDroneTrainingSegmentRecord> DisplayedTrainingSegments;
 
 	UPROPERTY(Transient)
+	FDroneTrainingLapComparison DisplayedLapComparison;
+
+	UPROPERTY(Transient)
 	FText TrainingStatusDisplayText;
 
 	UPROPERTY(Transient)
@@ -178,6 +199,18 @@ private:
 
 	UPROPERTY(Transient)
 	FText AverageSegmentTimeDisplayText;
+
+	UPROPERTY(Transient)
+	FText PreviousLapAverageTimeDisplayText;
+
+	UPROPERTY(Transient)
+	FText BestLapTimeDisplayText;
+
+	UPROPERTY(Transient)
+	FText LapTimeDeltaDisplayText;
+
+	UPROPERTY(Transient)
+	FText LapSpeedDeltaDisplayText;
 
 	/**
 	 * 아래 네 이름은 C++ ↔ WBP Designer 계약이다.
@@ -219,6 +252,18 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> AverageSegmentTimeValueText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> PreviousLapAverageTimeValueText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> BestLapTimeValueText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> LapTimeDeltaValueText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> LapSpeedDeltaValueText;
 
 	UPROPERTY(Transient)
 	bool bUsingNativeFallbackLayout = false;

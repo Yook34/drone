@@ -9,6 +9,23 @@ namespace DroneTrainingLapRecorder
 {
 constexpr double CentimetersToMeters = 0.01;
 constexpr double MetersPerSecondToKilometersPerHour = 3.6;
+
+bool IsValidCompletedLap(const FDroneTrainingLapRecord& Lap)
+{
+	return Lap.bCompleted
+		&& FMath::IsFinite(Lap.ElapsedSeconds)
+		&& FMath::IsFinite(Lap.AverageSpeedKilometersPerHour)
+		&& Lap.ElapsedSeconds > UE_DOUBLE_SMALL_NUMBER
+		&& Lap.AverageSpeedKilometersPerHour >= 0.0;
+}
+
+bool IsValidSegment(const FDroneTrainingSegmentRecord& Segment)
+{
+	return FMath::IsFinite(Segment.ElapsedSeconds)
+		&& FMath::IsFinite(Segment.AverageSpeedKilometersPerHour)
+		&& Segment.ElapsedSeconds > UE_DOUBLE_SMALL_NUMBER
+		&& Segment.AverageSpeedKilometersPerHour >= 0.0;
+}
 }
 
 UDroneTrainingLapRecorderComponent::UDroneTrainingLapRecorderComponent()
@@ -48,6 +65,7 @@ void UDroneTrainingLapRecorderComponent::InitializeRecorder(
 	UnbindGateSequence();
 	// 다른 Sequence의 Lap은 같은 비교 History로 사용할 수 없다.
 	SuccessfulLaps.Reset();
+	LastCompletedComparison = FDroneTrainingLapComparison();
 	GateSequence = InGateSequence;
 	if (GateSequence)
 	{
@@ -125,6 +143,135 @@ double UDroneTrainingLapRecorderComponent::CalculateAverageSpeedKilometersPerHou
 		: 0.0;
 }
 
+FDroneTrainingLapComparison UDroneTrainingLapRecorderComponent::BuildLapComparison(
+	const TArray<FDroneTrainingLapRecord>& PreviousLaps,
+	const FDroneTrainingLapRecord& CurrentLap)
+{
+	FDroneTrainingLapComparison Result;
+	Result.CurrentLap = CurrentLap;
+
+	double PreviousElapsedSum = 0.0;
+	double PreviousSpeedSum = 0.0;
+	double PreviousBestElapsed = TNumericLimits<double>::Max();
+	double PreviousBestSpeed = 0.0;
+	for (const FDroneTrainingLapRecord& PreviousLap : PreviousLaps)
+	{
+		if (!DroneTrainingLapRecorder::IsValidCompletedLap(PreviousLap))
+		{
+			continue;
+		}
+
+		++Result.PreviousLapCount;
+		PreviousElapsedSum += PreviousLap.ElapsedSeconds;
+		PreviousSpeedSum += PreviousLap.AverageSpeedKilometersPerHour;
+		PreviousBestElapsed = FMath::Min(PreviousBestElapsed, PreviousLap.ElapsedSeconds);
+		PreviousBestSpeed = FMath::Max(
+			PreviousBestSpeed,
+			PreviousLap.AverageSpeedKilometersPerHour);
+	}
+
+	Result.bHasPreviousBaseline = Result.PreviousLapCount > 0;
+	if (Result.bHasPreviousBaseline)
+	{
+		const double PreviousCount = static_cast<double>(Result.PreviousLapCount);
+		Result.PreviousAverageElapsedSeconds = PreviousElapsedSum / PreviousCount;
+		Result.PreviousAverageSpeedKilometersPerHour = PreviousSpeedSum / PreviousCount;
+		Result.ElapsedDeltaFromPreviousAverageSeconds =
+			CurrentLap.ElapsedSeconds - Result.PreviousAverageElapsedSeconds;
+		Result.SpeedDeltaFromPreviousAverageKilometersPerHour =
+			CurrentLap.AverageSpeedKilometersPerHour
+			- Result.PreviousAverageSpeedKilometersPerHour;
+		Result.bIsNewBestTime = CurrentLap.ElapsedSeconds < PreviousBestElapsed;
+		Result.BestElapsedSeconds = FMath::Min(
+			PreviousBestElapsed,
+			CurrentLap.ElapsedSeconds);
+		Result.BestAverageSpeedKilometersPerHour = FMath::Max(
+			PreviousBestSpeed,
+			CurrentLap.AverageSpeedKilometersPerHour);
+	}
+	else
+	{
+		// 첫 정상 완주는 비교 평균은 없지만 Best의 시작점은 된다.
+		Result.bIsNewBestTime = DroneTrainingLapRecorder::IsValidCompletedLap(CurrentLap);
+		Result.BestElapsedSeconds = CurrentLap.ElapsedSeconds;
+		Result.BestAverageSpeedKilometersPerHour = CurrentLap.AverageSpeedKilometersPerHour;
+	}
+
+	Result.SegmentComparisons.Reserve(CurrentLap.Segments.Num());
+	for (int32 SegmentPosition = 0; SegmentPosition < CurrentLap.Segments.Num(); ++SegmentPosition)
+	{
+		FDroneTrainingSegmentComparison SegmentResult;
+		SegmentResult.CurrentSegment = CurrentLap.Segments[SegmentPosition];
+		double PreviousSegmentElapsedSum = 0.0;
+		double PreviousSegmentSpeedSum = 0.0;
+		double PreviousSegmentBestElapsed = TNumericLimits<double>::Max();
+		double PreviousSegmentBestSpeed = 0.0;
+
+		for (const FDroneTrainingLapRecord& PreviousLap : PreviousLaps)
+		{
+			if (!DroneTrainingLapRecorder::IsValidCompletedLap(PreviousLap)
+				|| !PreviousLap.Segments.IsValidIndex(SegmentPosition))
+			{
+				continue;
+			}
+
+			const FDroneTrainingSegmentRecord& PreviousSegment =
+				PreviousLap.Segments[SegmentPosition];
+			if (!DroneTrainingLapRecorder::IsValidSegment(PreviousSegment))
+			{
+				continue;
+			}
+
+			++SegmentResult.PreviousRecordCount;
+			PreviousSegmentElapsedSum += PreviousSegment.ElapsedSeconds;
+			PreviousSegmentSpeedSum += PreviousSegment.AverageSpeedKilometersPerHour;
+			PreviousSegmentBestElapsed = FMath::Min(
+				PreviousSegmentBestElapsed,
+				PreviousSegment.ElapsedSeconds);
+			PreviousSegmentBestSpeed = FMath::Max(
+				PreviousSegmentBestSpeed,
+				PreviousSegment.AverageSpeedKilometersPerHour);
+		}
+
+		SegmentResult.bHasPreviousBaseline = SegmentResult.PreviousRecordCount > 0;
+		if (SegmentResult.bHasPreviousBaseline)
+		{
+			const double PreviousSegmentCount =
+				static_cast<double>(SegmentResult.PreviousRecordCount);
+			SegmentResult.PreviousAverageElapsedSeconds =
+				PreviousSegmentElapsedSum / PreviousSegmentCount;
+			SegmentResult.PreviousAverageSpeedKilometersPerHour =
+				PreviousSegmentSpeedSum / PreviousSegmentCount;
+			SegmentResult.ElapsedDeltaFromPreviousAverageSeconds =
+				SegmentResult.CurrentSegment.ElapsedSeconds
+				- SegmentResult.PreviousAverageElapsedSeconds;
+			SegmentResult.SpeedDeltaFromPreviousAverageKilometersPerHour =
+				SegmentResult.CurrentSegment.AverageSpeedKilometersPerHour
+				- SegmentResult.PreviousAverageSpeedKilometersPerHour;
+			SegmentResult.bIsNewBestTime =
+				SegmentResult.CurrentSegment.ElapsedSeconds < PreviousSegmentBestElapsed;
+			SegmentResult.BestElapsedSeconds = FMath::Min(
+				PreviousSegmentBestElapsed,
+				SegmentResult.CurrentSegment.ElapsedSeconds);
+			SegmentResult.BestAverageSpeedKilometersPerHour = FMath::Max(
+				PreviousSegmentBestSpeed,
+				SegmentResult.CurrentSegment.AverageSpeedKilometersPerHour);
+		}
+		else
+		{
+			SegmentResult.bIsNewBestTime =
+				DroneTrainingLapRecorder::IsValidSegment(SegmentResult.CurrentSegment);
+			SegmentResult.BestElapsedSeconds = SegmentResult.CurrentSegment.ElapsedSeconds;
+			SegmentResult.BestAverageSpeedKilometersPerHour =
+				SegmentResult.CurrentSegment.AverageSpeedKilometersPerHour;
+		}
+
+		Result.SegmentComparisons.Add(MoveTemp(SegmentResult));
+	}
+
+	return Result;
+}
+
 void UDroneTrainingLapRecorderComponent::HandleGateAccepted(
 	ADroneTrainingGate* Gate,
 	AActor* PassingActor,
@@ -185,6 +332,7 @@ void UDroneTrainingLapRecorderComponent::HandleSequenceReconfigured()
 	// Gate 배열이 바뀌면 예전 Course 기준 기록을 TUT-04 비교 원본으로 섞지 않는다.
 	CancelCurrentAttempt();
 	SuccessfulLaps.Reset();
+	LastCompletedComparison = FDroneTrainingLapComparison();
 }
 
 void UDroneTrainingLapRecorderComponent::HandleTelemetryUpdated(FDroneTelemetrySnapshot Snapshot)
@@ -327,6 +475,8 @@ void UDroneTrainingLapRecorderComponent::CompleteLap(const double EndTimeSeconds
 		LapDistanceCentimeters,
 		LapRecord.ElapsedSeconds);
 	LapRecord.Segments = CurrentSegments;
+	// 비교 평균은 반드시 현재 Lap을 History에 넣기 전에 계산한다.
+	LastCompletedComparison = BuildLapComparison(SuccessfulLaps, LapRecord);
 	SuccessfulLaps.Add(LapRecord);
 
 	UnbindActiveDrone();
@@ -341,6 +491,7 @@ void UDroneTrainingLapRecorderComponent::CompleteLap(const double EndTimeSeconds
 	CurrentSegments.Reset();
 	// 성공 History와 완료 상태를 모두 commit한 뒤 Blueprint에 불변 Record를 전달한다.
 	OnLapCompleted.Broadcast(LapRecord);
+	OnLapComparisonReady.Broadcast(LastCompletedComparison);
 }
 
 void UDroneTrainingLapRecorderComponent::CancelCurrentAttempt()
