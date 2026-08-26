@@ -74,6 +74,11 @@ bool FDroneFlightHUDTelemetryBindingTest::RunTest(const FString& Parameters)
 		TestTrue(
 			TEXT("Flight HUD binds the Training segment event once"),
 			TrainingSource->OnSegmentRecorded.Contains(Widget, FName(TEXT("HandleTrainingSegmentRecorded"))));
+		TestTrue(
+			TEXT("Flight HUD binds the TUT-04 comparison event once"),
+			TrainingSource->OnLapComparisonReady.Contains(
+				Widget,
+				FName(TEXT("HandleTrainingLapComparisonReady"))));
 
 		FDroneTrainingSegmentRecord FirstSegment;
 		FirstSegment.ElapsedSeconds = 2.0;
@@ -94,10 +99,33 @@ bool FDroneFlightHUDTelemetryBindingTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Completed segment average distance is calculated"), Widget->GetAverageSegmentDistanceDisplayText().ToString(), FString(TEXT("완료 구간 평균 거리  150.0 m")));
 		TestEqual(TEXT("Completed segment average time is calculated"), Widget->GetAverageSegmentTimeDisplayText().ToString(), FString(TEXT("완료 구간 평균 시간  3.00초")));
 
+		// 비교 계산은 Recorder 책임이고 HUD는 전달받은 결과의 부호·의미만 표시한다.
+		FDroneTrainingLapComparison Comparison;
+		Comparison.CurrentLap.bCompleted = true;
+		Comparison.CurrentLap.ElapsedSeconds = 9.0;
+		Comparison.bHasPreviousBaseline = true;
+		Comparison.PreviousLapCount = 2;
+		Comparison.PreviousAverageElapsedSeconds = 11.0;
+		Comparison.BestElapsedSeconds = 9.0;
+		Comparison.ElapsedDeltaFromPreviousAverageSeconds = -2.0;
+		Comparison.SpeedDeltaFromPreviousAverageKilometersPerHour = 5.0;
+		Comparison.bIsNewBestTime = true;
+		TrainingSource->OnLapComparisonReady.Broadcast(Comparison);
+
+		TestEqual(TEXT("HUD shows the previous Lap average"), Widget->GetPreviousLapAverageTimeDisplayText().ToString(), FString(TEXT("이전 완주 평균  11.00초")));
+		TestEqual(TEXT("HUD marks a new Best Lap"), Widget->GetBestLapTimeDisplayText().ToString(), FString(TEXT("최고 완주 기록  9.00초 · 신기록")));
+		TestEqual(TEXT("Negative time Delta is labeled faster"), Widget->GetLapTimeDeltaDisplayText().ToString(), FString(TEXT("평균 대비  -2.00초 빠름")));
+		TestEqual(TEXT("Positive speed Delta keeps its sign"), Widget->GetLapSpeedDeltaDisplayText().ToString(), FString(TEXT("속도 평균 대비  +5.0 km/h")));
+
 		Widget->ClearTrainingRecordSource();
 		TestFalse(
 			TEXT("Clearing Training source removes the segment binding"),
 			TrainingSource->OnSegmentRecorded.Contains(Widget, FName(TEXT("HandleTrainingSegmentRecorded"))));
+		TestFalse(
+			TEXT("Clearing Training source removes the comparison binding"),
+			TrainingSource->OnLapComparisonReady.Contains(
+				Widget,
+				FName(TEXT("HandleTrainingLapComparisonReady"))));
 	}
 
 	// 이미 해제한 Source의 늦은 Event가 현재 HUD를 덮어쓰면 안 된다.

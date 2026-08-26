@@ -15,7 +15,8 @@ class UDroneTrainingGateSequenceComponent;
  *
  * Gate Sequence는 순서 판정만 유지한다. 이 Component는 Gate 0 승인 뒤 같은 Drone의
  * 기존 Telemetry 10Hz Event에서 World 위치를 표본화하므로 별도 Tick이나 Timer가 없다.
- * 비교, Best, 점수, 결과 UI, SaveGame은 TUT-04 이후 책임이다.
+ * TUT-04에서는 저장된 성공 History로 현재 완료 결과의 이전 평균·Best를 만든다.
+ * 점수와 SaveGame 영속화는 후속 책임이다.
  */
 UCLASS(ClassGroup=(Drone), BlueprintType, meta=(BlueprintSpawnableComponent))
 class UDroneTrainingLapRecorderComponent : public UActorComponent
@@ -53,6 +54,10 @@ public:
 	UFUNCTION(BlueprintPure, Category="Tutorial|Recording")
 	FDroneTrainingLapRecord GetLastCompletedLap() const;
 
+	/** 마지막 완료 Lap과 그 이전 성공 History만 사용해 만든 비교 결과다. */
+	UFUNCTION(BlueprintPure, Category="Tutorial|Comparison")
+	FDroneTrainingLapComparison GetLastCompletedComparison() const { return LastCompletedComparison; }
+
 	UFUNCTION(BlueprintPure, Category="Tutorial|Recording")
 	double GetCurrentLapElapsedSeconds() const;
 
@@ -77,6 +82,14 @@ public:
 		double DistanceCentimeters,
 		double ElapsedSeconds);
 
+	/**
+	 * CurrentLap을 PreviousLaps에 넣기 전에 호출해야 한다.
+	 * 이렇게 하면 두 번째 시도의 평균에 자기 자신이 섞이지 않는다.
+	 */
+	static FDroneTrainingLapComparison BuildLapComparison(
+		const TArray<FDroneTrainingLapRecord>& PreviousLaps,
+		const FDroneTrainingLapRecord& CurrentLap);
+
 	/** Gate 0 정상 승인 직후 발생한다. TUT-04 Blueprint UI가 이 Event를 구독할 수 있다. */
 	UPROPERTY(BlueprintAssignable, Category="Tutorial|Recording")
 	FDroneTrainingLapStartedSignature OnLapStarted;
@@ -88,6 +101,10 @@ public:
 	/** 마지막 Gate 승인 뒤 완성된 원본 Lap을 전달한다. */
 	UPROPERTY(BlueprintAssignable, Category="Tutorial|Recording")
 	FDroneTrainingLapCompletedSignature OnLapCompleted;
+
+	/** 완료 원본 commit 뒤 이전 평균·Best·Delta를 Blueprint 결과 UI에 전달한다. */
+	UPROPERTY(BlueprintAssignable, Category="Tutorial|Comparison")
+	FDroneTrainingLapComparisonReadySignature OnLapComparisonReady;
 
 private:
 	UFUNCTION()
@@ -137,6 +154,9 @@ private:
 	/** 성공 기록만 실행 중 보존한다. Reset은 부분 시도만 버리고 이 배열은 유지한다. */
 	UPROPERTY(Transient)
 	TArray<FDroneTrainingLapRecord> SuccessfulLaps;
+
+	UPROPERTY(Transient)
+	FDroneTrainingLapComparison LastCompletedComparison;
 
 	double LapStartTimeSeconds = 0.0;
 	double SegmentStartTimeSeconds = 0.0;
