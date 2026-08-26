@@ -34,8 +34,8 @@
 
 namespace DronePrototypePIEInputLifecycle
 {
-// 실제 Prototype Asset 경로를 고정해 PIE가 Legacy Third Person 자산으로 되돌아가는 회귀를 막는다.
-constexpr const TCHAR* MapPackage = TEXT("/Game/Drone/Prototype/Maps/Lvl_DronePrototype");
+// 중앙 Maps 폴더의 실제 Prototype Asset을 고정해 Legacy 템플릿 자산으로 되돌아가는 회귀를 막는다.
+constexpr const TCHAR* MapPackage = TEXT("/Game/Drone/Maps/Lvl_DronePrototype");
 constexpr const TCHAR* PawnClassPath = TEXT("/Game/Drone/Integrations/DronePackFPV/BP_DroneFPVIntegration.BP_DroneFPVIntegration_C");
 constexpr const TCHAR* ControllerClassPath = TEXT("/Game/Drone/Prototype/Blueprints/BP_DronePrototypePlayerController.BP_DronePrototypePlayerController_C");
 constexpr const TCHAR* FlightHUDClassPath = TEXT("/Game/Drone/Prototype/UI/WBP_DroneFlightHUD.WBP_DroneFlightHUD_C");

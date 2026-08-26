@@ -29,7 +29,7 @@ constexpr const TCHAR* GateClassPath =
 constexpr const TCHAR* GameModeClassPath =
 	TEXT("/Game/Drone/Prototype/Blueprints/BP_DronePrototypeGameMode.BP_DronePrototypeGameMode_C");
 constexpr const TCHAR* TrainingMapObjectPath =
-	TEXT("/Game/Drone/Tutorial/Maps/Lvl_DroneTraining.Lvl_DroneTraining");
+	TEXT("/Game/Drone/Maps/Lvl_DroneTraining.Lvl_DroneTraining");
 constexpr const TCHAR* GuideMaterialObjectPath =
 	TEXT("/Game/Drone/Tutorial/Materials/M_DroneTrainingGuide.M_DroneTrainingGuide");
 }
@@ -82,7 +82,7 @@ bool FDroneTrainingAssetTest::RunTest(const FString& Parameters)
 
 	// 2) 정확한 Map 경로와 WorldSettings 계약을 검사해 전역 ThirdPerson 설정 의존을 막는다.
 	UWorld* TrainingWorld = LoadObject<UWorld>(nullptr, DroneTrainingAssets::TrainingMapObjectPath);
-	TestNotNull(TEXT("Lvl_DroneTraining loads from the Tutorial Map path"), TrainingWorld);
+	TestNotNull(TEXT("Training Map loads from the central Drone Maps path"), TrainingWorld);
 	if (!TrainingWorld)
 	{
 		return false;
