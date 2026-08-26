@@ -25,7 +25,7 @@
 
 namespace DroneTrainingPIESmoke
 {
-constexpr const TCHAR* MapPackage = TEXT("/Game/Drone/Tutorial/Maps/Lvl_DroneTraining");
+constexpr const TCHAR* MapPackage = TEXT("/Game/Drone/Maps/Lvl_DroneTraining");
 constexpr const TCHAR* CourseClassPath =
 	TEXT("/Game/Drone/Tutorial/Blueprints/BP_DroneTrainingCourse.BP_DroneTrainingCourse_C");
 constexpr const TCHAR* GateClassPath =
