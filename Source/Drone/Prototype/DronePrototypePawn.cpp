@@ -13,6 +13,8 @@
 #include "InputAction.h"
 #include "InputActionValue.h"
 #include "InputMappingContext.h"
+#include "Perception/AIPerceptionStimuliSourceComponent.h"
+#include "Perception/AISense_Sight.h"
 #include "Telemetry/DroneTelemetryComponent.h"
 
 ADronePrototypePawn::ADronePrototypePawn()
@@ -55,6 +57,18 @@ ADronePrototypePawn::ADronePrototypePawn()
 
 	// HUD가 Pawn을 직접 계산하지 않도록 공용 데이터 공급 Component를 기본 부착한다.
 	TelemetryComponent = CreateDefaultSubobject<UDroneTelemetryComponent>(TEXT("TelemetryComponent"));
+
+	// AI Perception의 전역 Pawn 자동 등록 설정에 의존하지 않고 Sight 대상으로 명시한다.
+	PerceptionStimuliSource = CreateDefaultSubobject<UAIPerceptionStimuliSourceComponent>(TEXT("PerceptionStimuliSource"));
+}
+
+void ADronePrototypePawn::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// Actor가 유효한 World에 들어온 뒤 등록해야 Perception System이 실제 Source를 받을 수 있다.
+	PerceptionStimuliSource->RegisterForSense(UAISense_Sight::StaticClass());
+	PerceptionStimuliSource->RegisterWithPerceptionSystem();
 }
 
 void ADronePrototypePawn::PawnClientRestart()

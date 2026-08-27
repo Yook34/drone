@@ -32,6 +32,14 @@
 			"Enabled": true
 		},
 		{
+			"Name": "SmartObjects",
+			"Enabled": true
+		},
+		{
+			"Name": "GameplayInteractions",
+			"Enabled": true
+		},
+		{
 			"Name": "ModelContextProtocol",
 			"Enabled": true,
 			"TargetAllowList": [

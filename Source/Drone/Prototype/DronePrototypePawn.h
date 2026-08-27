@@ -14,6 +14,7 @@ class UInputMappingContext;
 class USphereComponent;
 class USpringArmComponent;
 class UStaticMeshComponent;
+class UAIPerceptionStimuliSourceComponent;
 struct FInputActionValue;
 
 /**
@@ -43,8 +44,10 @@ public:
 	UCameraComponent* GetFollowCamera() const { return FollowCamera; }
 	UFloatingPawnMovement* GetPrototypeMovementComponent() const { return PrototypeMovementComponent; }
 	UDroneTelemetryComponent* GetTelemetryComponent() const { return TelemetryComponent; }
+	UAIPerceptionStimuliSourceComponent* GetPerceptionStimuliSource() const { return PerceptionStimuliSource; }
 
 protected:
+	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	/** 충돌과 이동의 기준 Root. Visual Mesh와 분리해 구매 에셋 교체 영향을 줄인다. */
@@ -67,6 +70,10 @@ protected:
 	/** HUD와 Tutorial 기록기에 기본 0.1초 주기 및 명시적 즉시 갱신 Snapshot을 공급한다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Prototype|Components", meta=(AllowPrivateAccess="true"))
 	TObjectPtr<UDroneTelemetryComponent> TelemetryComponent;
+
+	/** Enemy AI Sight가 드론을 명시적인 감지 대상으로 등록하는 Component다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Prototype|Components", meta=(AllowPrivateAccess="true"))
+	TObjectPtr<UAIPerceptionStimuliSourceComponent> PerceptionStimuliSource;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Prototype|Input", meta=(AllowPrivateAccess="true"))
 	TObjectPtr<UInputMappingContext> PrototypeMappingContext;
