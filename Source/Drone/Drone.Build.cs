@@ -15,6 +15,7 @@ public class Drone : ModuleRules
 			"InputCore",
 			"EnhancedInput",
 			"AIModule",
+			"NavigationSystem",
 			"GameplayTags",
 			"StateTreeModule",
 			"GameplayStateTreeModule",
