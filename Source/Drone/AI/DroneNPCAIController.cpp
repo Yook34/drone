@@ -14,7 +14,9 @@ ADroneNPCAIController::ADroneNPCAIController()
 	bAttachToPawn = true;
 
 	StateTreeAIComponent = CreateDefaultSubobject<UStateTreeAIComponent>(TEXT("StateTreeAIComponent"));
-	StateTreeAIComponent->SetStartLogicAutomatically(true);
+	// AI-SO/NPC 단계에는 아직 StateTree Asset이 없다. 빈 Reference를 자동 시작하면 PIE마다
+	// Engine Error가 발생하므로, 실제 StateTree를 연결하는 카드에서 명시적으로 시작한다.
+	StateTreeAIComponent->SetStartLogicAutomatically(false);
 
 	ReservationComponent = CreateDefaultSubobject<UDroneSmartObjectReservationComponent>(TEXT("ReservationComponent"));
 
@@ -130,13 +132,19 @@ void ADroneNPCAIController::HandleTargetPerceptionUpdated(AActor* Actor, const F
 		DetectedDrone = Actor;
 		// 순찰·대기 Slot을 붙잡은 채 전투로 넘어가지 않도록 먼저 해제한다.
 		ReservationComponent->ReleaseReservation();
-		StateTreeAIComponent->SendStateTreeEvent(DroneAITags::Event_DroneDetected);
+		if (StateTreeAIComponent->IsRunning())
+		{
+			StateTreeAIComponent->SendStateTreeEvent(DroneAITags::Event_DroneDetected);
+		}
 		OnDronePerceptionChanged.Broadcast(Actor, true);
 	}
 	else if (DetectedDrone.Get() == Actor)
 	{
 		DetectedDrone.Reset();
-		StateTreeAIComponent->SendStateTreeEvent(DroneAITags::Event_DroneLost);
+		if (StateTreeAIComponent->IsRunning())
+		{
+			StateTreeAIComponent->SendStateTreeEvent(DroneAITags::Event_DroneLost);
+		}
 		OnDronePerceptionChanged.Broadcast(Actor, false);
 	}
 }
