@@ -9,7 +9,9 @@
 class UArrowComponent;
 class USceneComponent;
 class USkeletalMeshComponent;
+class USkeletalMesh;
 class USmartObjectComponent;
+class USmartObjectDefinition;
 
 /**
  * Patrol, Guard, Ambient, Cover, MG Turret를 Map에 배치하는 프로젝트 소유 Host Actor다.
@@ -30,6 +32,20 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Drone|AI|SmartObject")
 	USkeletalMeshComponent* GetStationMesh() const { return StationMesh; }
+
+	/** 프로젝트 소유 Authoring Tool과 Blueprint가 Engine Component 내부를 직접 만지지 않게 한다. */
+	UFUNCTION(BlueprintCallable, Category="Drone|AI|SmartObject")
+	void SetSmartObjectDefinition(USmartObjectDefinition* Definition);
+
+	UFUNCTION(BlueprintPure, Category="Drone|AI|SmartObject")
+	USmartObjectDefinition* GetSmartObjectDefinition() const;
+
+	/** MG Station만 후보 Mesh를 표시하고 일반 이동 지점은 nullptr로 비워 둔다. */
+	UFUNCTION(BlueprintCallable, Category="Drone|AI|SmartObject")
+	void SetStationSkeletalMesh(USkeletalMesh* SkeletalMesh);
+
+	UFUNCTION(BlueprintPure, Category="Drone|AI|SmartObject")
+	USkeletalMesh* GetStationSkeletalMesh() const;
 
 	UFUNCTION(BlueprintPure, Category="Drone|AI|SmartObject")
 	UArrowComponent* GetSlotFacingPreview() const { return SlotFacingPreview; }

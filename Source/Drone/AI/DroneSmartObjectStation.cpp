@@ -5,6 +5,7 @@
 #include "Components/SceneComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "SmartObjectComponent.h"
+#include "SmartObjectDefinition.h"
 
 ADroneSmartObjectStation::ADroneSmartObjectStation()
 {
@@ -28,6 +29,26 @@ ADroneSmartObjectStation::ADroneSmartObjectStation()
 	SlotFacingPreview->ArrowSize = 1.5f;
 	SlotFacingPreview->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	SlotFacingPreview->SetCanEverAffectNavigation(false);
+}
+
+void ADroneSmartObjectStation::SetSmartObjectDefinition(USmartObjectDefinition* Definition)
+{
+	SmartObjectComponent->SetDefinition(Definition);
+}
+
+USmartObjectDefinition* ADroneSmartObjectStation::GetSmartObjectDefinition() const
+{
+	return const_cast<USmartObjectDefinition*>(SmartObjectComponent->GetBaseDefinition());
+}
+
+void ADroneSmartObjectStation::SetStationSkeletalMesh(USkeletalMesh* SkeletalMesh)
+{
+	StationMesh->SetSkeletalMeshAsset(SkeletalMesh);
+}
+
+USkeletalMesh* ADroneSmartObjectStation::GetStationSkeletalMesh() const
+{
+	return StationMesh->GetSkeletalMeshAsset();
 }
 
 FGameplayTag ADroneSmartObjectStation::GetExpectedActivityTag() const

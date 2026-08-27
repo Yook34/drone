@@ -10,10 +10,14 @@
 #include "AI/DroneSmartObjectReservationComponent.h"
 #include "AI/DroneSmartObjectStation.h"
 #include "Components/StateTreeAIComponent.h"
+#include "Engine/Blueprint.h"
+#include "Engine/SkeletalMesh.h"
+#include "GameplayInteractionSmartObjectBehaviorDefinition.h"
 #include "Perception/AIPerceptionComponent.h"
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
 #include "Prototype/DronePrototypePawn.h"
 #include "SmartObjectComponent.h"
+#include "SmartObjectDefinition.h"
 #include "SmartObjectUserComponent.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -92,6 +96,114 @@ bool FDroneSmartObjectFoundationTest::RunTest(const FString& Parameters)
 	if (DroneDefaults)
 	{
 		TestNotNull(TEXT("Prototype Drone is an explicit perception source"), DroneDefaults->GetPerceptionStimuliSource());
+	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FDroneSmartObjectStationAssetsTest,
+	"Drone.AI.SmartObjectStationAssets",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FDroneSmartObjectStationAssetsTest::RunTest(const FString& Parameters)
+{
+	struct FStationAssetExpectation
+	{
+		const TCHAR* Name;
+		EDroneSmartObjectActivity Activity;
+		FGameplayTag ActivityTag;
+		bool bHasMGTurretMesh;
+	};
+
+	const FStationAssetExpectation Expectations[] =
+	{
+		{TEXT("EnemyPatrol"), EDroneSmartObjectActivity::EnemyPatrol, DroneAITags::Activity_EnemyPatrol, false},
+		{TEXT("FriendlyBasePatrol"), EDroneSmartObjectActivity::FriendlyBasePatrol, DroneAITags::Activity_FriendlyBasePatrol, false},
+		{TEXT("Ambient"), EDroneSmartObjectActivity::Ambient, DroneAITags::Activity_Ambient, false},
+		{TEXT("Guard"), EDroneSmartObjectActivity::Guard, DroneAITags::Activity_Guard, false},
+		{TEXT("Cover"), EDroneSmartObjectActivity::Cover, DroneAITags::Activity_Cover, false},
+		{TEXT("MGTurret"), EDroneSmartObjectActivity::MGTurret, DroneAITags::Activity_MGTurret, true},
+	};
+
+	USkeletalMesh* MGTurretMesh = LoadObject<USkeletalMesh>(
+		nullptr,
+		TEXT("/Game/Drone/ThirdParty/GroundDroneKit/Meshes/Alt_Turrets/MG_Turret/MG_Turret_SK.MG_Turret_SK"));
+	TestNotNull(TEXT("MG Turret candidate mesh loads"), MGTurretMesh);
+
+	for (const FStationAssetExpectation& Expectation : Expectations)
+	{
+		const FString DefinitionName = FString::Printf(TEXT("SO_Def_%s"), Expectation.Name);
+		const FString DefinitionPath = FString::Printf(
+			TEXT("/Game/Drone/AI/SmartObjects/Definitions/%s.%s"),
+			*DefinitionName,
+			*DefinitionName);
+		USmartObjectDefinition* Definition = LoadObject<USmartObjectDefinition>(nullptr, *DefinitionPath);
+		TestNotNull(*FString::Printf(TEXT("%s Definition loads"), Expectation.Name), Definition);
+		if (!Definition)
+		{
+			continue;
+		}
+
+		TestTrue(*FString::Printf(TEXT("%s Definition validates"), Expectation.Name), Definition->Validate());
+		TestEqual(*FString::Printf(TEXT("%s has one Slot"), Expectation.Name), Definition->GetSlots().Num(), 1);
+		if (Definition->GetSlots().Num() == 1)
+		{
+			FGameplayTagContainer ActivityTags;
+			Definition->GetSlotActivityTags(0, ActivityTags);
+			TestTrue(
+				*FString::Printf(TEXT("%s Slot has its Activity Tag"), Expectation.Name),
+				ActivityTags.HasTagExact(Expectation.ActivityTag));
+
+			const UGameplayInteractionSmartObjectBehaviorDefinition* Behavior =
+				Cast<UGameplayInteractionSmartObjectBehaviorDefinition>(Definition->GetBehaviorDefinition(
+					0,
+					UGameplayInteractionSmartObjectBehaviorDefinition::StaticClass()));
+			TestNotNull(*FString::Printf(TEXT("%s has Gameplay Interaction Behavior"), Expectation.Name), Behavior);
+			if (Behavior)
+			{
+				TestNull(
+					*FString::Printf(TEXT("%s Interaction StateTree is intentionally deferred"), Expectation.Name),
+					Behavior->GetStateTree());
+			}
+		}
+
+		const FString BlueprintName = FString::Printf(TEXT("BP_SO_%s"), Expectation.Name);
+		const FString BlueprintPath = FString::Printf(
+			TEXT("/Game/Drone/AI/SmartObjects/Blueprints/%s.%s"),
+			*BlueprintName,
+			*BlueprintName);
+		UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *BlueprintPath);
+		TestNotNull(*FString::Printf(TEXT("%s Station Blueprint loads"), Expectation.Name), Blueprint);
+		if (!Blueprint || !Blueprint->GeneratedClass)
+		{
+			continue;
+		}
+
+		TestTrue(
+			*FString::Printf(TEXT("%s Station uses project parent"), Expectation.Name),
+			Blueprint->GeneratedClass->IsChildOf(ADroneSmartObjectStation::StaticClass()));
+		const ADroneSmartObjectStation* Station = Cast<ADroneSmartObjectStation>(Blueprint->GeneratedClass->GetDefaultObject());
+		TestNotNull(*FString::Printf(TEXT("%s Station CDO exists"), Expectation.Name), Station);
+		if (!Station)
+		{
+			continue;
+		}
+
+		TestTrue(
+			*FString::Printf(TEXT("%s Station Activity matches"), Expectation.Name),
+			Station->GetActivity() == Expectation.Activity);
+		TestTrue(
+			*FString::Printf(TEXT("%s Station expected Tag matches"), Expectation.Name),
+			Station->GetExpectedActivityTag().MatchesTagExact(Expectation.ActivityTag));
+		TestTrue(
+			*FString::Printf(TEXT("%s Station Definition matches"), Expectation.Name),
+			Station->GetSmartObjectDefinition() == Definition);
+		TestTrue(
+			*FString::Printf(TEXT("%s Station Mesh boundary matches"), Expectation.Name),
+			Expectation.bHasMGTurretMesh
+				? Station->GetStationSkeletalMesh() == MGTurretMesh
+				: Station->GetStationSkeletalMesh() == nullptr);
 	}
 
 	return true;
