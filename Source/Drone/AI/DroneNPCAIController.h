@@ -52,6 +52,12 @@ public:
 	UFUNCTION(BlueprintPure, Category="Drone|AI")
 	bool UsesShotgun() const;
 
+	UFUNCTION(BlueprintPure, Category="Drone|AI")
+	bool IsHostileNPC() const;
+
+	UFUNCTION(BlueprintPure, Category="Drone|AI")
+	bool IsFriendlyNPC() const;
+
 	/** Profile에 따라 Enemy Patrol 또는 Friendly Base Patrol 검색 Tag를 다시 설정한다. */
 	UFUNCTION(BlueprintCallable, Category="Drone|AI|SmartObject")
 	void ConfigureDefaultPatrolActivities();
@@ -60,12 +66,36 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Drone|AI|SmartObject")
 	bool PrepareMGTurretSearch();
 
+	/** EnemyPatrol만 검색해 직전 완료 지점과 다른 다음 Slot을 예약한다. */
+	UFUNCTION(BlueprintCallable, Category="Drone|AI|Patrol")
+	bool ClaimNextEnemyPatrolSlot(FTransform& OutSlotTransform);
+
+	/** 정상 도착·대기 뒤 현재 Slot을 방문 기록에 남기고 해제한다. */
+	UFUNCTION(BlueprintCallable, Category="Drone|AI|Patrol")
+	void CompleteCurrentPatrolSlot();
+
+	UFUNCTION(BlueprintPure, Category="Drone|AI|Patrol")
+	int32 GetCompletedPatrolCycles() const { return CompletedPatrolCycles; }
+
+	UFUNCTION(BlueprintPure, Category="Drone|AI|Patrol")
+	int32 GetVisitedPatrolSlotCount() const { return VisitedPatrolSlotLocations.Num(); }
+
+	UFUNCTION(BlueprintPure, Category="Drone|AI|Patrol")
+	const TArray<FVector>& GetVisitedPatrolSlotLocations() const { return VisitedPatrolSlotLocations; }
+
 	UPROPERTY(BlueprintAssignable, Category="Drone|AI|Perception")
 	FDroneTargetPerceptionChangedSignature OnDronePerceptionChanged;
 
 protected:
+	virtual void BeginPlay() override;
 	virtual void OnPossess(APawn* InPawn) override;
 	virtual void OnUnPossess() override;
+
+	/**
+	 * WorldSubsystem의 Smart Object Runtime 초기화가 끝난 뒤 Hostile 순찰을 시작한다.
+	 * 레벨 로딩 중 OnPossess에서 바로 조회하면 아직 초기화되지 않은 Runtime을 건드릴 수 있다.
+	 */
+	void TryStartHostilePatrol();
 
 	UFUNCTION()
 	void HandleTargetPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus);
@@ -86,4 +116,20 @@ protected:
 
 	UPROPERTY(Transient, VisibleAnywhere, BlueprintReadOnly, Category="Drone|AI|Perception")
 	TWeakObjectPtr<AActor> DetectedDrone;
+
+	/** 직전 지점 바로 재선택을 막는 Greybox 기준값. 최종 맵 규모에 맞춰 조정한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Drone|AI|Patrol", meta=(ClampMin="0.0", ForceUnits="cm"))
+	float PatrolRepeatAvoidanceRadius = 250.0f;
+
+	UPROPERTY(Transient, VisibleAnywhere, BlueprintReadOnly, Category="Drone|AI|Patrol")
+	int32 CompletedPatrolCycles = 0;
+
+	UPROPERTY(Transient, VisibleAnywhere, BlueprintReadOnly, Category="Drone|AI|Patrol")
+	TArray<FVector> VisitedPatrolSlotLocations;
+
+	UPROPERTY(Transient)
+	FVector LastCompletedPatrolSlotLocation = FVector::ZeroVector;
+
+	UPROPERTY(Transient)
+	bool bHasCompletedPatrolSlot = false;
 };

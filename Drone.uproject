@@ -28,6 +28,10 @@
 			"Enabled": true
 		},
 		{
+			"Name": "PropertyBindingUtils",
+			"Enabled": true
+		},
+		{
 			"Name": "GameplayStateTree",
 			"Enabled": true
 		},
