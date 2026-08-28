@@ -8,13 +8,22 @@
 #include "Perception/AISenseConfig_Sight.h"
 #include "Perception/AISense_Sight.h"
 #include "Prototype/DronePrototypePawn.h"
+#include "StateTree.h"
+
+namespace
+{
+	constexpr const TCHAR* HostilePatrolStateTreePath =
+		TEXT("/Game/Drone/AI/StateTrees/ST_NPC_HostilePatrol.ST_NPC_HostilePatrol");
+}
 
 ADroneNPCAIController::ADroneNPCAIController()
 {
 	bAttachToPawn = true;
 
 	StateTreeAIComponent = CreateDefaultSubobject<UStateTreeAIComponent>(TEXT("StateTreeAIComponent"));
-	StateTreeAIComponent->SetStartLogicAutomatically(true);
+	// 역할별 Tree를 Controller가 명시적으로 선택한다. 자동 시작을 켜면 Friendly까지
+	// Hostile Tree를 공유하거나, Asset 지정 전 빈 Tree를 시작할 수 있으므로 끈다.
+	StateTreeAIComponent->SetStartLogicAutomatically(false);
 
 	ReservationComponent = CreateDefaultSubobject<UDroneSmartObjectReservationComponent>(TEXT("ReservationComponent"));
 
@@ -38,6 +47,15 @@ ADroneNPCAIController::ADroneNPCAIController()
 		&ADroneNPCAIController::HandleTargetPerceptionUpdated);
 }
 
+void ADroneNPCAIController::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// UWorldSubsystem::OnWorldBeginPlay 뒤라 Smart Object Runtime 조회가 안전하다.
+	// 레벨에 미리 배치된 Controller는 OnPossess에서 Asset만 지정하고 여기서 실행한다.
+	TryStartHostilePatrol();
+}
+
 void ADroneNPCAIController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
@@ -47,12 +65,42 @@ void ADroneNPCAIController::OnPossess(APawn* InPawn)
 		ReservationComponent->SetUserTags(Profile->BuildSmartObjectUserTags());
 	}
 	ConfigureDefaultPatrolActivities();
+
+	// AI-PATROL-01은 Hostile 전용 최소 순찰 Tree만 자동 시작한다.
+	// Friendly StateTree는 AI-FRIEND-01에서 별도 Asset으로 연결한다.
+	if (IsHostileNPC())
+	{
+		if (UStateTree* HostilePatrolStateTree = LoadObject<UStateTree>(nullptr, HostilePatrolStateTreePath))
+		{
+			StateTreeAIComponent->SetStateTree(HostilePatrolStateTree);
+			// Runtime Spawn처럼 Controller BeginPlay가 이미 끝난 경우에는 지금 시작한다.
+			// 레벨 로딩 중 Possess라면 BeginPlay가 Smart Object 초기화 뒤 시작한다.
+			if (HasActorBegunPlay())
+			{
+				TryStartHostilePatrol();
+			}
+		}
+	}
+}
+
+void ADroneNPCAIController::TryStartHostilePatrol()
+{
+	if (IsHostileNPC()
+		&& StateTreeAIComponent
+		&& !StateTreeAIComponent->IsRunning())
+	{
+		StateTreeAIComponent->StartLogic();
+	}
 }
 
 void ADroneNPCAIController::OnUnPossess()
 {
 	ReservationComponent->ReleaseReservation();
 	DetectedDrone.Reset();
+	if (StateTreeAIComponent->IsRunning())
+	{
+		StateTreeAIComponent->StopLogic(TEXT("NPC UnPossessed"));
+	}
 	Super::OnUnPossess();
 }
 
@@ -66,6 +114,18 @@ bool ADroneNPCAIController::UsesShotgun() const
 {
 	const UDroneNPCProfileComponent* Profile = GetPossessedProfile();
 	return Profile && Profile->GetProfile().WeaponType == EDroneNPCWeaponType::Shotgun;
+}
+
+bool ADroneNPCAIController::IsHostileNPC() const
+{
+	const UDroneNPCProfileComponent* Profile = GetPossessedProfile();
+	return Profile && Profile->IsHostile();
+}
+
+bool ADroneNPCAIController::IsFriendlyNPC() const
+{
+	const UDroneNPCProfileComponent* Profile = GetPossessedProfile();
+	return Profile && Profile->IsFriendly();
 }
 
 void ADroneNPCAIController::ConfigureDefaultPatrolActivities()
@@ -110,6 +170,51 @@ bool ADroneNPCAIController::PrepareMGTurretSearch()
 	return true;
 }
 
+bool ADroneNPCAIController::ClaimNextEnemyPatrolSlot(FTransform& OutSlotTransform)
+{
+	OutSlotTransform = FTransform::Identity;
+	if (!IsHostileNPC() || !GetPawn() || HasDetectedDrone())
+	{
+		return false;
+	}
+
+	FGameplayTagContainer Activities;
+	Activities.AddTag(DroneAITags::Activity_EnemyPatrol);
+	ReservationComponent->SetRequiredActivityTags(Activities);
+
+	if (bHasCompletedPatrolSlot)
+	{
+		return ReservationComponent->ClaimNearestAvailableSlotAvoiding(
+			GetPawn()->GetActorLocation(),
+			LastCompletedPatrolSlotLocation,
+			PatrolRepeatAvoidanceRadius,
+			OutSlotTransform);
+	}
+	return ReservationComponent->ClaimNearestAvailableSlot(GetPawn()->GetActorLocation(), OutSlotTransform);
+}
+
+void ADroneNPCAIController::CompleteCurrentPatrolSlot()
+{
+	FTransform SlotTransform;
+	if (ReservationComponent->GetReservedSlotTransform(SlotTransform))
+	{
+		LastCompletedPatrolSlotLocation = SlotTransform.GetLocation();
+		bHasCompletedPatrolSlot = true;
+		++CompletedPatrolCycles;
+
+		const bool bAlreadyVisited = VisitedPatrolSlotLocations.ContainsByPredicate(
+			[this](const FVector& Location)
+			{
+				return Location.Equals(LastCompletedPatrolSlotLocation, 10.0f);
+			});
+		if (!bAlreadyVisited)
+		{
+			VisitedPatrolSlotLocations.Add(LastCompletedPatrolSlotLocation);
+		}
+	}
+	ReservationComponent->ReleaseReservation();
+}
+
 void ADroneNPCAIController::HandleTargetPerceptionUpdated(AActor* Actor, const FAIStimulus Stimulus)
 {
 	// 현재 첫 감지 대상은 프로젝트 소유 Drone Prototype만 허용한다.
@@ -130,13 +235,19 @@ void ADroneNPCAIController::HandleTargetPerceptionUpdated(AActor* Actor, const F
 		DetectedDrone = Actor;
 		// 순찰·대기 Slot을 붙잡은 채 전투로 넘어가지 않도록 먼저 해제한다.
 		ReservationComponent->ReleaseReservation();
-		StateTreeAIComponent->SendStateTreeEvent(DroneAITags::Event_DroneDetected);
+		if (StateTreeAIComponent->IsRunning())
+		{
+			StateTreeAIComponent->SendStateTreeEvent(DroneAITags::Event_DroneDetected);
+		}
 		OnDronePerceptionChanged.Broadcast(Actor, true);
 	}
 	else if (DetectedDrone.Get() == Actor)
 	{
 		DetectedDrone.Reset();
-		StateTreeAIComponent->SendStateTreeEvent(DroneAITags::Event_DroneLost);
+		if (StateTreeAIComponent->IsRunning())
+		{
+			StateTreeAIComponent->SendStateTreeEvent(DroneAITags::Event_DroneLost);
+		}
 		OnDronePerceptionChanged.Broadcast(Actor, false);
 	}
 }

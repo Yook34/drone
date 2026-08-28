@@ -36,6 +36,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Drone|AI|SmartObject")
 	bool ClaimNearestAvailableSlot(const FVector& SearchOrigin, FTransform& OutSlotTransform);
 
+	/**
+	 * 직전에 완료한 Slot 주변을 피해서 다음 후보를 예약한다.
+	 * 모든 다른 후보가 사용 중이면 일반 가장 가까운 검색으로 한 번 더 시도한다.
+	 */
+	UFUNCTION(BlueprintCallable, Category="Drone|AI|SmartObject")
+	bool ClaimNearestAvailableSlotAvoiding(
+		const FVector& SearchOrigin,
+		const FVector& AvoidLocation,
+		float AvoidRadius,
+		FTransform& OutSlotTransform);
+
 	/** Gameplay Interaction Task를 직접 쓰지 않을 때 Claim을 Occupied로 전환한다. */
 	UFUNCTION(BlueprintCallable, Category="Drone|AI|SmartObject")
 	bool MarkReservationOccupied();
@@ -105,4 +116,11 @@ protected:
 
 	UPROPERTY(Transient, VisibleAnywhere, BlueprintReadOnly, Category="Drone|AI|SmartObject|Runtime")
 	FTransform CachedSlotTransform = FTransform::Identity;
+
+private:
+	bool ClaimNearestAvailableSlotInternal(
+		const FVector& SearchOrigin,
+		const FVector* AvoidLocation,
+		float AvoidRadius,
+		FTransform& OutSlotTransform);
 };
