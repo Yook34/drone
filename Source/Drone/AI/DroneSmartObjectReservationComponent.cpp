@@ -25,6 +25,36 @@ UDroneSmartObjectReservationComponent::UDroneSmartObjectReservationComponent()
 bool UDroneSmartObjectReservationComponent::ClaimNearestAvailableSlot(
 	const FVector& SearchOrigin,
 	FTransform& OutSlotTransform)
+
+{
+	return ClaimNearestAvailableSlotInternal(SearchOrigin, nullptr, 0.0f, OutSlotTransform);
+}
+
+bool UDroneSmartObjectReservationComponent::ClaimNearestAvailableSlotAvoiding(
+	const FVector& SearchOrigin,
+	const FVector& AvoidLocation,
+	const float AvoidRadius,
+	FTransform& OutSlotTransform)
+{
+	if (ClaimNearestAvailableSlotInternal(
+		SearchOrigin,
+		&AvoidLocation,
+		FMath::Max(0.0f, AvoidRadius),
+		OutSlotTransform))
+	{
+		return true;
+	}
+
+	// 지점이 하나뿐이거나 다른 모든 지점을 다른 NPC가 사용 중일 때는
+	// 직전 지점 재사용을 허용해 순찰 전체가 영구 정지하지 않게 한다.
+	return ClaimNearestAvailableSlotInternal(SearchOrigin, nullptr, 0.0f, OutSlotTransform);
+}
+
+bool UDroneSmartObjectReservationComponent::ClaimNearestAvailableSlotInternal(
+	const FVector& SearchOrigin,
+	const FVector* AvoidLocation,
+	const float AvoidRadius,
+	FTransform& OutSlotTransform)
 {
 	OutSlotTransform = FTransform::Identity;
 
@@ -72,6 +102,11 @@ bool UDroneSmartObjectReservationComponent::ClaimNearestAvailableSlot(
 	{
 		const TOptional<FTransform> SlotTransform = Subsystem->GetSlotTransform(Result);
 		if (!SlotTransform.IsSet())
+		{
+			continue;
+		}
+		if (AvoidLocation
+			&& FVector::DistSquared2D(*AvoidLocation, SlotTransform->GetLocation()) < FMath::Square(AvoidRadius))
 		{
 			continue;
 		}

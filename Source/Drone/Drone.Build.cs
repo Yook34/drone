@@ -30,8 +30,14 @@ public class Drone : ModuleRules
 
 		if (Target.bBuildEditor)
 		{
-			// Editor 자동화 테스트에서 PIE를 시작·종료하고 실제 Blueprint Asset을 검사한다.
-			PrivateDependencyModuleNames.Add("UnrealEd");
+			// Editor 자동화 테스트와 프로젝트 소유 StateTree 작성 도구에서만 사용하는 모듈이다.
+			// Runtime/Game 빌드에는 Editor 전용 의존성을 포함하지 않는다.
+			PrivateDependencyModuleNames.AddRange(new string[] {
+				"UnrealEd",
+				"AssetRegistry",
+				"PropertyBindingUtils",
+				"StateTreeEditorModule"
+			});
 		}
 
 		PublicIncludePaths.AddRange(new string[] {
